@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# Project runtime data
+chroma_db/
+chat_histories/
+md5.text
+data/
+
+# Local logs and caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# IDE
+.vscode/
+.idea/

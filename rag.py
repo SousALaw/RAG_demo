@@ -1,0 +1,315 @@
+from vector_stores import VectorStoreService
+from langchain_community.embeddings import DashScopeEmbeddings
+import config_data as config
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain_core.documents import Document
+from langchain_core.runnables import RunnablePassthrough, RunnableWithMessageHistory, RunnableLambda
+from file_history_store import get_history
+from langchain_core.output_parsers import StrOutputParser
+
+
+def print_prompt(prompt):
+    print("="*20)
+    print(prompt.to_string())
+    print("="*20)
+    return prompt
+
+class RAGService(object):
+    def __init__(self):
+        
+        self.vector_store_service = VectorStoreService(
+            embedding=DashScopeEmbeddings(model=config.embedding_model)
+        )
+        self.retriever = self.vector_store_service.get_retriever()
+
+        self.prompt_template = ChatPromptTemplate.from_messages(
+            [
+                ("system", "以我提供的已知参考资料为主，专业并且简洁简要地回答用户问题。参考资料：{context}"),
+                ("system", "并且我提供用户的会话历史记录，如下："),
+                MessagesPlaceholder("history"),
+                ("user", "请回答用户提问：{input}"),
+            ]
+        )
+
+        self.chat_model = ChatTongyi(model=config.chat_model)
+
+        self.chain = self.__get_chain()
+
+    def __get_chain(self):
+        """
+        获取最终执行的链
+        """
+        def format_documents(docs:list[Document]):
+            if not docs:
+                return "无相关资料"
+            
+            formatted_str = ""
+            for doc in docs:
+                formatted_str += f"文档内容：{doc.page_content}\n 文档元数据：{doc.metadata}\n\n"
+
+            return formatted_str
+
+        def format_for_retriever(value:dict):
+            return value["input"] 
+        
+        def format_for_prompt(value):
+            new_value = {}
+            new_value["input"] = value["input"]["input"]
+            new_value["context"] = value["context"]
+            new_value["history"] = value["input"]["history"]
+            return new_value
+
+        chain = (
+            {
+                "input": RunnablePassthrough(),
+                "context": RunnableLambda(format_for_retriever) | RunnableLambda(self.retrieve_docs_progressively) | format_documents,
+            } | RunnableLambda(format_for_prompt) | self.prompt_template | print_prompt |self.chat_model | StrOutputParser()
+        )
+        
+        conversation_chain = RunnableWithMessageHistory(
+            chain,
+            get_history,
+            input_messages_key="input",
+            history_messages_key="history",
+        )
+
+        return conversation_chain
+
+    @staticmethod
+    def _normalize_relevance_score(score: float) -> float:
+        """将不同区间的分数归一化到 0~1，值越大表示相关度越高。"""
+        if score < 0:
+            return 0.0
+        if score <= 1:
+            return score
+        # 某些向量库可能返回距离分数（越小越相关），这里做兜底转换。
+        return 1 / (1 + score)
+
+    @staticmethod
+    def _filter_candidates(
+        candidates: list[tuple[Document, float]],
+        max_docs: int,
+        max_sources: int,
+        relative_ratio: float,
+        min_floor: float,
+    ) -> tuple[list[Document], dict]:
+        """按相对分数和来源数量限制筛选候选文档，并返回调试信息。"""
+        if not candidates:
+            return [], {
+                "best_score": 0.0,
+                "dynamic_threshold": 0.0,
+                "selected": [],
+                "dropped": [],
+            }
+
+        sorted_candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
+        best_score = sorted_candidates[0][1]
+        dynamic_threshold = max(min_floor, best_score * relative_ratio)
+
+        selected_docs: list[Document] = []
+        selected_sources: set[str] = set()
+        selected_keys: set[str] = set()
+        selected_debug: list[dict] = []
+        dropped_debug: list[dict] = []
+
+        for doc, score in sorted_candidates:
+            source = doc.metadata.get("source", "") if doc.metadata else ""
+            key = f"{source}::{hash(doc.page_content)}"
+
+            if score < dynamic_threshold:
+                dropped_debug.append(
+                    {
+                        "source": source,
+                        "score": round(score, 4),
+                        "reason": "below_dynamic_threshold",
+                    }
+                )
+                continue
+
+            if key in selected_keys:
+                dropped_debug.append(
+                    {
+                        "source": source,
+                        "score": round(score, 4),
+                        "reason": "duplicate_chunk",
+                    }
+                )
+                continue
+
+            if source and source not in selected_sources and len(selected_sources) >= max_sources:
+                dropped_debug.append(
+                    {
+                        "source": source,
+                        "score": round(score, 4),
+                        "reason": "source_limit",
+                    }
+                )
+                continue
+
+            selected_keys.add(key)
+            if source:
+                selected_sources.add(source)
+            selected_docs.append(doc)
+            selected_debug.append(
+                {
+                    "source": source,
+                    "score": round(score, 4),
+                    "reason": "selected",
+                }
+            )
+
+            if len(selected_docs) >= max_docs:
+                break
+
+        return selected_docs, {
+            "best_score": round(best_score, 4),
+            "dynamic_threshold": round(dynamic_threshold, 4),
+            "selected": selected_debug,
+            "dropped": dropped_debug,
+        }
+
+    def _retrieve_docs_progressively_with_debug(self, query: str) -> tuple[list[Document], dict]:
+        """按渐进式披露策略动态检索文档，并返回调试信息。"""
+        stage_topk = list(getattr(config, "progressive_stage_topk", [1, 3, 5]))
+        stage_thresholds = list(getattr(config, "progressive_stage_thresholds", [0.8, 0.65, 0.45]))
+        min_docs = int(getattr(config, "progressive_min_docs", 1))
+        max_docs = int(getattr(config, "progressive_max_docs", 4))
+        max_sources = int(getattr(config, "progressive_max_sources", 2))
+        relative_ratio = float(getattr(config, "progressive_relative_score_ratio", 0.9))
+        min_floor = float(getattr(config, "progressive_min_relevance_floor", 0.55))
+
+        stage_count = min(len(stage_topk), len(stage_thresholds))
+        if stage_count == 0:
+            docs = self.retriever.invoke(query)
+            return docs, {
+                "mode": "fallback_retriever",
+                "stages": [],
+                "filter": {},
+                "selected_sources": [doc.metadata.get("source", "") for doc in docs if doc.metadata],
+            }
+
+        candidates: list[tuple[Document, float]] = []
+        candidate_keys: set[str] = set()
+        stage_debug: list[dict] = []
+
+        for i in range(stage_count):
+            top_k = int(stage_topk[i])
+            threshold = float(stage_thresholds[i])
+            if top_k <= 0:
+                continue
+
+            pairs = self.vector_store_service.similarity_search_with_relevance_scores(query=query, k=top_k)
+            current_stage = {
+                "stage": i + 1,
+                "top_k": top_k,
+                "threshold": threshold,
+                "accepted": 0,
+                "inspected": len(pairs),
+            }
+
+            for doc, raw_score in pairs:
+                score = self._normalize_relevance_score(raw_score)
+                if score < threshold:
+                    continue
+
+                source = doc.metadata.get("source", "") if doc.metadata else ""
+                key = f"{source}::{hash(doc.page_content)}"
+                if key in candidate_keys:
+                    continue
+
+                candidate_keys.add(key)
+                candidates.append((doc, score))
+                current_stage["accepted"] += 1
+
+                if len(candidates) >= max_docs * 2:
+                    break
+
+            stage_debug.append(current_stage)
+
+            if len(candidates) >= min_docs:
+                break
+
+        selected_docs, filter_debug = self._filter_candidates(
+            candidates=candidates,
+            max_docs=max_docs,
+            max_sources=max_sources,
+            relative_ratio=relative_ratio,
+            min_floor=min_floor,
+        )
+        if selected_docs:
+            selected_sources = []
+            for doc in selected_docs:
+                source = doc.metadata.get("source", "") if doc.metadata else ""
+                if source and source not in selected_sources:
+                    selected_sources.append(source)
+
+            debug = {
+                "mode": "progressive",
+                "stages": stage_debug,
+                "filter": filter_debug,
+                "selected_sources": selected_sources,
+            }
+            return selected_docs, debug
+
+        # 三阶段都未命中阈值时兜底返回，避免模型完全无上下文。
+        fallback_k = max(stage_topk)
+        pairs = self.vector_store_service.similarity_search_with_relevance_scores(query=query, k=fallback_k)
+        fallback_candidates = [(doc, self._normalize_relevance_score(raw_score)) for doc, raw_score in pairs]
+        selected_docs, filter_debug = self._filter_candidates(
+            candidates=fallback_candidates,
+            max_docs=max_docs,
+            max_sources=max_sources,
+            relative_ratio=0.0,
+            min_floor=0.0,
+        )
+        selected_docs = selected_docs[:max_docs]
+        selected_sources = []
+        for doc in selected_docs:
+            source = doc.metadata.get("source", "") if doc.metadata else ""
+            if source and source not in selected_sources:
+                selected_sources.append(source)
+
+        debug = {
+            "mode": "fallback",
+            "stages": stage_debug,
+            "filter": filter_debug,
+            "selected_sources": selected_sources,
+        }
+        return selected_docs, debug
+
+    def retrieve_docs_progressively(self, query: str) -> list[Document]:
+        """按渐进式披露策略动态检索文档。"""
+        docs, _ = self._retrieve_docs_progressively_with_debug(query)
+        return docs
+
+    def get_references_and_debug(self, query: str) -> tuple[list[str], dict]:
+        """一次检索同时返回参考来源与调试信息。"""
+        docs, debug = self._retrieve_docs_progressively_with_debug(query)
+        source_names = []
+        for doc in docs:
+            source = doc.metadata.get("source") if doc.metadata else None
+            if source and source not in source_names:
+                source_names.append(source)
+        return source_names, debug
+
+    def get_progressive_debug_report(self, query: str) -> dict:
+        """返回渐进式检索调试报告。"""
+        _, debug = self._retrieve_docs_progressively_with_debug(query)
+        return debug
+
+    def get_reference_sources(self, query: str) -> list[str]:
+        """根据检索结果返回去重后的知识库文件名列表。"""
+        source_names, _ = self.get_references_and_debug(query)
+        return source_names
+    
+
+if __name__ == "__main__":
+    # session_id配置
+    session_config = {
+        "configurable":{
+            "session_id": "user_001",
+        }
+    }
+    res = RAGService().chain.invoke({"input": "夏天穿什么衣服"}, config=session_config)
+    print(res)
