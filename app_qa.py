@@ -1,3 +1,6 @@
+# app_qa.py 的最顶部
+from dotenv import load_dotenv
+load_dotenv()  # 自动读取项目根目录下的 .env 文件
 import streamlit as st
 from rag import RAGService
 import time
