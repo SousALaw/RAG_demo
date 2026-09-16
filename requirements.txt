@@ -1,7 +1,11 @@
 streamlit==1.56.0
 langchain==1.2.15
-langchain-core==1.1.0
+langchain-core>=1.2.10
 langchain-community==0.4.1
 langchain-chroma==1.1.0
 langchain-text-splitters==1.1.1
 dashscope==1.25.16
+python-dotenv==1.2.3
+fastapi==0.141.1
+httpx==0.28.1
+uvicorn==0.52.4

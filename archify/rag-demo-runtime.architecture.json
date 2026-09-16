@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RAG_demo 运行时架构",
+    "output": "archify/rag-demo-runtime.architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1740, 1030]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "使用者浏览器",
+      "sublabel": "localhost:8501",
+      "pos": [30, 300],
+      "size": [150, 74]
+    },
+    {
+      "id": "qa_ui",
+      "type": "frontend",
+      "label": "智能问答页",
+      "sublabel": "app_qa.py:110 · chat_input",
+      "pos": [300, 300],
+      "size": [220, 74]
+    },
+    {
+      "id": "rag",
+      "type": "backend",
+      "label": "RAGService",
+      "sublabel": "rag.py:63 链 · :172 渐进检索",
+      "pos": [660, 300],
+      "size": [240, 74]
+    },
+    {
+      "id": "vs",
+      "type": "backend",
+      "label": "VectorStoreService",
+      "sublabel": "vector_stores.py:23 带分数检索",
+      "pos": [1040, 300],
+      "size": [230, 74]
+    },
+    {
+      "id": "chroma",
+      "type": "database",
+      "label": "Chroma 向量库",
+      "sublabel": "chroma_db/ · collection=rag",
+      "pos": [1400, 300],
+      "size": [240, 74]
+    },
+    {
+      "id": "chat_api",
+      "type": "external",
+      "label": "通义千问 qwen3-max",
+      "sublabel": "rag.py:35 · ChatTongyi",
+      "pos": [660, 70],
+      "size": [260, 74]
+    },
+    {
+      "id": "embed_api",
+      "type": "external",
+      "label": "text-embedding-v4",
+      "sublabel": "rag.py:22 · DashScope",
+      "pos": [1330, 70],
+      "size": [290, 74]
+    },
+    {
+      "id": "config",
+      "type": "security",
+      "label": "config_data.py",
+      "sublabel": "参数 + API Key 入口",
+      "pos": [300, 580],
+      "size": [250, 74]
+    },
+    {
+      "id": "history",
+      "type": "database",
+      "label": "会话历史",
+      "sublabel": "chat_histories/ · JSON",
+      "pos": [660, 580],
+      "size": [250, 74]
+    },
+    {
+      "id": "files",
+      "type": "database",
+      "label": "知识库文件 data/",
+      "sublabel": "txt 原文 + md5.text",
+      "pos": [1040, 580],
+      "size": [240, 74]
+    },
+    {
+      "id": "kb_ui",
+      "type": "frontend",
+      "label": "知识库管理页",
+      "sublabel": "app_file_uploader.py:41 四 tab",
+      "pos": [300, 840],
+      "size": [250, 74]
+    },
+    {
+      "id": "kb",
+      "type": "backend",
+      "label": "KnowledgeBaseService",
+      "sublabel": "knowledge_base.py:85 切分 · :158 入库",
+      "pos": [660, 840],
+      "size": [250, 74]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "本机进程 · C:\\ai\\RAG_demo",
+      "wraps": ["config", "qa_ui", "rag", "vs", "chroma", "kb_ui", "kb", "files", "history"],
+      "pad": 50
+    },
+    {
+      "kind": "security-group",
+      "label": "信任边界 1 · 单用户无鉴权入口（session_id 硬编码 user_001）",
+      "wraps": ["qa_ui", "config", "kb_ui"],
+      "pad": 16
+    },
+    {
+      "kind": "security-group",
+      "label": "信任边界 2 · 数据出网（HTTPS + DASHSCOPE_API_KEY）",
+      "wraps": ["chat_api", "embed_api"],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    { "id": "c_user_ui", "from": "user", "to": "qa_ui", "label": "localhost:8501", "variant": "emphasis" },
+    { "id": "c_ui_rag", "from": "qa_ui", "to": "rag", "label": "chain.stream()", "variant": "emphasis" },
+    { "id": "c_rag_vs", "from": "rag", "to": "vs", "label": "三阶段检索", "variant": "emphasis" },
+    { "id": "c_vs_chroma", "from": "vs", "to": "chroma", "label": "similarity_search", "variant": "emphasis" },
+    { "id": "c_rag_chat", "from": "rag", "to": "chat_api", "label": "HTTPS / API Key", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c_chroma_embed", "from": "chroma", "to": "embed_api", "label": "向量化", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c_config_ui", "from": "config", "to": "qa_ui", "label": "session_config", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c_rag_hist", "from": "rag", "to": "history", "label": "会话历史读写", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "c_kbui_kb", "from": "kb_ui", "to": "kb", "label": "增删改调用", "variant": "dashed" },
+    { "id": "c_kb_files", "from": "kb", "to": "files", "label": "txt 落盘", "variant": "dashed" },
+    { "id": "c_kb_chroma", "from": "kb", "to": "chroma", "label": "add_texts 写入", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "外部依赖（全部出网）",
+      "items": [
+        "DashScope text-embedding-v4 承担全部向量化",
+        "DashScope 通义 qwen3-max 承担全部生成",
+        "无本地模型、无结果缓存、无离线降级路径"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "信任边界",
+      "items": [
+        "浏览器到本机 Streamlit 无鉴权，默认端口 8501",
+        "session_id 硬编码 user_001，无多租户隔离",
+        "跨公网仅靠 HTTPS 与 DASHSCOPE_API_KEY 环境变量"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "本地明文状态",
+      "items": [
+        "chroma_db/ 与 data/ 无加密、无访问控制",
+        "chat_histories/ 以 JSON 明文保存全部会话",
+        "md5.text 记录已入库内容哈希用于去重"
+      ]
+    }
+  ]
+}

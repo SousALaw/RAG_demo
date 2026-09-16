@@ -10,6 +10,11 @@ __pycache__/
 venv/
 env/
 
+# Secrets — 存放 DASHSCOPE_API_KEY，绝不能提交
+.env
+.env.*
+!.env.example
+
 # Streamlit
 .streamlit/
 

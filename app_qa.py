@@ -1,42 +1,38 @@
-# app_qa.py 的最顶部
+# app_qa.py
 from dotenv import load_dotenv
 load_dotenv()  # 自动读取项目根目录下的 .env 文件
 import streamlit as st
-from rag import RAGService
-import time
-import os
-import config_data as config
+
+import api_client
 from app_file_uploader import render_uploader_page
 
-
-def read_kb_file_content(filename: str) -> str:
-    """读取 data 目录下知识库文件内容。"""
-    # 仅允许读取 data 目录下的文件名，避免路径穿越。
-    safe_name = os.path.basename(filename)
-    data_dir = getattr(config, "data_directory", "./data")
-    file_path = os.path.join(data_dir, safe_name)
-    if not os.path.isfile(file_path):
-        return "[文件不存在] 可能已被删除或重命名。"
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
+SESSION_ID = "user_001"
 
 
 def render_reference_expanders(references: list[str]) -> None:
-    """在回答下方渲染可展开的参考文件内容。"""
+    """在回答下方渲染可展开的参考文件内容（内容通过 API 读取）。"""
     if not references:
         return
 
     st.markdown("\n\n参考知识库文件：")
-    for index, filename in enumerate(references):
-        content = read_kb_file_content(filename)
+    for filename in references:
+        content = None
+        error = None
+        try:
+            content = api_client.get_file_content(filename)
+        except Exception as exc:
+            error = str(exc)
+
         with st.expander(filename, expanded=False):
-            st.text(content)
-            st.caption(f"来源：data/{os.path.basename(filename)}")
+            if error:
+                st.warning(f"读取失败：{error}")
+            else:
+                st.text(content)
+                st.caption(f"来源：data/{filename}")
 
 
 def render_retrieval_debug_panel(debug_info: dict, in_sidebar: bool = False) -> None:
-    """渲染渐进式检索调试信息。"""
+    """渲染渐进式检索调试信息（数据来自 /qa/ask 的 retrieval_debug）。"""
     if not debug_info:
         return
 
@@ -72,22 +68,21 @@ def render_retrieval_debug_panel(debug_info: dict, in_sidebar: bool = False) -> 
             panel.write("、".join(selected_sources))
 
 
-
 def render_qa_page() -> None:
     # 标题
     st.title("智能客服问答系统")
     st.divider()  # 分隔符
     show_retrieval_debug = st.sidebar.toggle("显示检索调试信息", value=False)
+    st.caption(f"后端 API：{api_client.get_base_url()}")
 
     if "messages" not in st.session_state:
-        st.session_state["messages"] = [{"role": "assistant", "content": "您好！我是智能客服，有什么可以帮助您的吗？"}]
+        st.session_state["messages"] = [
+            {"role": "assistant", "content": "您好！我是智能客服，有什么可以帮助您的吗？"}
+        ]
         # 每条消息是一个字典，包含"role"和"content"两个字段
 
     if "latest_retrieval_debug" not in st.session_state:
         st.session_state["latest_retrieval_debug"] = {}
-
-    if "rag" not in st.session_state:
-        st.session_state["rag"] = RAGService()  # 实例化RAGService类，创建一个RAG服务对象
 
     for msg in st.session_state["messages"]:
         with st.chat_message(msg["role"]):
@@ -105,32 +100,30 @@ def render_qa_page() -> None:
         # 把用户输入的消息添加到session_state中
         st.session_state["messages"].append({"role": "user", "content": prompt})
 
-        ai_res_list = []  # 用来缓存AI回复的列表
-
+        result = None
         with st.spinner("AI正在思考..."):
-            # 调用RAG服务对象的chain链来处理用户输入的消息，并传入会话配置
-            time.sleep(1)  # 模拟AI思考的时间
-            res_stream = st.session_state["rag"].chain.stream({"input": prompt}, config=config.session_config)
+            # 通过 HTTP 调后端 API；本页不再持有 RAGService 实例。
+            try:
+                result = api_client.ask(query=prompt, session_id=SESSION_ID)
+            except Exception as exc:
+                st.error(f"请求失败：{exc}")
 
-            # 定义一个生成器函数，用来捕获AI回复的流式输出，并将每个输出块添加到缓存列表中
-            def capture(generator, cache_list):
-                for chunk in generator:
-                    cache_list.append(chunk)
-                    yield chunk
+        if result is not None:
+            answer = result.get("answer", "")
+            references = result.get("references", [])
+            retrieval_debug = result.get("retrieval_debug", {})
 
             with st.chat_message("assistant"):
-                st.write_stream(capture(res_stream, ai_res_list))  # 把AI的回复以流式的方式展示在页面上
-
-                # 基于同一问题再做一次检索，补充可展开的参考文件。
-                references, retrieval_debug = st.session_state["rag"].get_references_and_debug(prompt)
+                st.write(answer)  # 整段渲染，不做流式
                 render_reference_expanders(references)
-                st.session_state["latest_retrieval_debug"] = retrieval_debug
+
+            st.session_state["latest_retrieval_debug"] = retrieval_debug
 
             # 把AI的回复添加到session_state中
             st.session_state["messages"].append(
                 {
                     "role": "assistant",
-                    "content": "".join(ai_res_list),
+                    "content": answer,
                     "references": references,
                     "retrieval_debug": retrieval_debug,
                 }
@@ -147,6 +140,7 @@ def render_qa_page() -> None:
             render_retrieval_debug_panel(latest_debug, in_sidebar=True)
         else:
             st.sidebar.caption("暂无检索调试数据，请先提一个问题。")
+
 
 module = st.sidebar.radio(
     "功能模块",

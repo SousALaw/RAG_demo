@@ -283,6 +283,36 @@ class RAGService(object):
         docs, _ = self._retrieve_docs_progressively_with_debug(query)
         return docs
 
+    def search_kb(self, query: str, k: int = 5) -> list[dict]:
+        """按相似度返回命中切片，供 Agent Tool 做知识库检索。
+
+        与问答链路不同，这里不做阈值过滤、不限制来源数量，
+        只返回原始 top-k 命中，避免「为喂给模型而做的裁剪」影响检索结果本身。
+        """
+        if not query or not query.strip():
+            return []
+
+        limit = int(k) if k else 5
+        if limit <= 0:
+            return []
+
+        pairs = self.vector_store_service.similarity_search_with_relevance_scores(
+            query=query, k=limit
+        )
+
+        results: list[dict] = []
+        for doc, raw_score in pairs:
+            metadata = doc.metadata or {}
+            results.append(
+                {
+                    "source": metadata.get("source", ""),
+                    "content": doc.page_content,
+                    # 复用问答链路的归一化口径，保证 score 落在 0~1 且越大越相关。
+                    "score": round(self._normalize_relevance_score(raw_score), 4),
+                }
+            )
+        return results
+
     def get_references_and_debug(self, query: str) -> tuple[list[str], dict]:
         """一次检索同时返回参考来源与调试信息。"""
         docs, debug = self._retrieve_docs_progressively_with_debug(query)

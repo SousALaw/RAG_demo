@@ -6,10 +6,17 @@
 import os
 import config_data as config
 import hashlib
+import threading
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from datetime import datetime
+
+# md5.text 是「读全部 -> 改写」的共享文件；FastAPI 的同步路由跑在线程池里会真并发，
+# 这里用模块级锁保护下面的读改写段。
+# 注意：锁只在单进程内有效，API 进程与 Agent 进程各起一份时并不互斥。
+_md5_lock = threading.Lock()
+
 
 def check_md5(md5_str: str):
     """
@@ -147,9 +154,10 @@ class KnowledgeBaseService(object):
 
         # 计算字符串的md5值
         md5_hex = get_string_md5(data)
-        # 检查md5值是否已经被处理过
-        if check_md5(md5_hex):
-            return (f"[跳过]，文件{filename}已经被处理过了")
+        # 检查md5值是否已经被处理过（check_md5 在文件缺失时会创建文件，属写操作）
+        with _md5_lock:
+            if check_md5(md5_hex):
+                return (f"[跳过]，文件{filename}已经被处理过了")
 
         knowledge_chunks = self._split_to_chunks(data)
 
@@ -160,7 +168,10 @@ class KnowledgeBaseService(object):
             metadatas=[metadata for _ in knowledge_chunks]
         )  # 将文本块添加到向量库中，并设置元数据
         
-        save_md5(md5_hex)  # 将md5字符串保存到数据库中
+        # 这里没有和上面的 check 合并成同一临界区，因为中间隔着 add_texts 的网络调用；
+        # 所以并发重复上传仍可能各写一次记录，锁只保证 md5.text 本身不被写坏。
+        with _md5_lock:
+            save_md5(md5_hex)  # 将md5字符串保存到数据库中
 
         return (f"[成功]，文件{filename}已经被成功处理了") # 返回True表示处理成功
 
@@ -177,7 +188,8 @@ class KnowledgeBaseService(object):
         self.chroma.delete(where={"source": filename})
 
         if old_text:
-            remove_md5(get_string_md5(old_text))
+            with _md5_lock:
+                remove_md5(get_string_md5(old_text))
 
         return f"[成功]，文件{filename}已删除"
 
@@ -206,12 +218,15 @@ class KnowledgeBaseService(object):
             metadatas=[metadata for _ in knowledge_chunks],
         )
 
-        if old_data:
-            remove_md5(get_string_md5(old_data))
-
         new_md5 = get_string_md5(new_data)
-        if not check_md5(new_md5):
-            save_md5(new_md5)
+        # remove / check / save 都作用于同一个 md5.text，放进同一临界区，
+        # 否则与并发的 add/delete 交错时会丢记录。
+        with _md5_lock:
+            if old_data:
+                remove_md5(get_string_md5(old_data))
+
+            if not check_md5(new_md5):
+                save_md5(new_md5)
 
         return f"[成功]，文件{filename}已更新"
 
