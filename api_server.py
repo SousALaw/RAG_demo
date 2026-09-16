@@ -8,6 +8,8 @@ FastAPI 双接口层。
 底层 Chroma / 向量化 / 大模型调用本身都是同步的。
 """
 
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -16,7 +18,9 @@ from app_core import normalize_filename, RAGApp
 
 # .env 由 app_core 统一加载（DASHSCOPE_API_KEY 在 RAGApp 构造时用到）。
 
-API_HOST = "127.0.0.1"
+# 监听地址可用 RAG_API_HOST 覆盖，默认只绑本机回环。
+# 本服务没有任何鉴权，改成 0.0.0.0 等于对局域网开放，必须自行用防火墙兜底。
+API_HOST = os.getenv("RAG_API_HOST", "127.0.0.1")
 API_PORT = 8000
 
 app = FastAPI(title="RAG Demo API", version="0.1.0")
