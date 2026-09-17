@@ -1,8 +1,8 @@
-# RAG 知识库问答服务（双接口）
+# RAG 知识库问答服务（双接口 + 多数据源）
 
-一个中文 RAG 示例项目：知识库入库 -> 向量检索 -> 结合大模型回答。
+一个中文 RAG 示例项目：知识库入库 -> 向量检索 -> 结合大模型回答。两个特点：
 
-改造后的重点是**一套业务逻辑、两种接入方式**：
+**一、一套业务逻辑，两种接入方式**
 
 | 接入方式 | 面向 | 入口 | 是否走 HTTP |
 | --- | --- | --- | --- |
@@ -11,6 +11,12 @@
 
 两条通道都只调用 [app_core.py](app_core.py) 里的 `RAGApp`，业务逻辑只实现一遍。
 前端（Streamlit）已与后端解耦，只通过 HTTP 调 API，不 import 任何服务层代码。
+
+**二、多数据源逻辑隔离**
+
+集市帖子、iwiki、学院知识库、图灵知识库、第三方网站**共用一个 Chroma 集合**，
+靠每个切片 metadata 里的 `category` 字段过滤；原文分目录放在 `data/{category}/` 下。
+检索可以不指定（跨所有源）或只查某一个源。详见「[数据源分类](#数据源分类category)」一节。
 
 架构图见 [archify/rag-demo-runtime.architecture.html](archify/rag-demo-runtime.architecture.html)（可直接用浏览器打开）。
 
@@ -27,22 +33,88 @@
                                   │
 服务层                  rag.py ──┴── knowledge_base.py
                           │              │
-存储层              chroma_db/      data/ · md5.text
+存储层              chroma_db/      data/{category}/ · md5.text
+                  （单集合 + category 过滤）
 ```
 
 | 文件 | 作用 |
 | --- | --- |
 | [app_core.py](app_core.py) | `RAGApp`：唯一编排入口，同时包装 `RAGService` 与 `KnowledgeBaseService` |
 | [api_server.py](api_server.py) | FastAPI 接口层，问答域 `/qa/*` + 知识库域 `/kb/*` |
-| [agent_tools.py](agent_tools.py) | 6 个 Agent Tool + `TOOL_SPECS` |
+| [agent_tools.py](agent_tools.py) | 7 个 Agent Tool + `TOOL_SPECS` |
 | [api_client.py](api_client.py) | 前端共享 httpx 客户端，后端地址从环境变量读 |
-| [app_qa.py](app_qa.py) | 智能问答页（Streamlit） |
-| [app_file_uploader.py](app_file_uploader.py) | 知识库管理页（Streamlit） |
+| [app_qa.py](app_qa.py) | 智能问答页（Streamlit），带数据源下拉（默认「全部」） |
+| [app_file_uploader.py](app_file_uploader.py) | 知识库管理页（Streamlit），四个 Tab 按选中数据源操作 |
 | [rag.py](rag.py) | 检索与生成链路，`RAGService` |
-| [knowledge_base.py](knowledge_base.py) | 切分、入库、增删改，`KnowledgeBaseService` |
+| [knowledge_base.py](knowledge_base.py) | 切分、入库、增删改、category 隔离，`KnowledgeBaseService` |
 | [vector_stores.py](vector_stores.py) | Chroma 检索封装，`VectorStoreService` |
-| [file_history_store.py](file_history_store.py) | 会话历史落盘 |
-| [config_data.py](config_data.py) | 模型名、分块、检索阈值等常量 |
+| [file_history_store.py](file_history_store.py) | 会话历史落盘（滑动窗口 + 磁盘上限） |
+| [config_data.py](config_data.py) | 数据源字典、模型名、分块、检索阈值、上下文长度等配置 |
+| [migrate_to_categories.py](migrate_to_categories.py) | 一次性迁移脚本：旧版扁平 `data/` -> 按 category 分目录 |
+
+## 数据源分类（category）
+
+当前配置了 5 个数据源，定义在 [config_data.py](config_data.py) 的 `knowledge_categories` 里：
+
+| category | 说明 |
+| --- | --- |
+| `market` | 集市帖子 |
+| `iwiki` | iwiki 文档 |
+| `college` | 学院知识库 |
+| `turing` | 图灵知识库 |
+| `third_party` | 第三方网站 |
+
+### 存储布局
+
+```
+chroma_db/            # 只有一个集合（config_data.collection_name）
+                      # 每个切片的 metadata 带 category / content_md5
+data/
+  market/             # data/{category}/{filename}
+  iwiki/
+  college/
+  turing/
+  third_party/
+md5.text              # 每行 "content_md5<TAB>category"
+```
+
+约定：
+
+- **单集合 + metadata 过滤**，不为每个源建独立 Chroma 实例，检索时用 `where={"category": ...}`。
+- **去重按 (内容, 分类) 隔离**：同一份内容可以同时存在于多个源，互不影响。
+- **不同源可以有同名文件**：删除/更新时用 `$and` 同时限定 `source` 与 `category`，
+  不会误删其他源的同名文件。
+- **加新数据源只改 `knowledge_categories` 一行**，其余代码不用动。
+
+### 参数语义
+
+| 场景 | `category` |
+| --- | --- |
+| 检索（`/qa/ask`、`tool_search_kb`） | 可选；不传 = 跨所有源 |
+| 新增 / 修改 / 删除 | **必填**；不传或不在白名单内 → API 返回 `400`，Python 抛 `ValueError` |
+| 读文件内容 / 列文件 | 可选；不传 = 跨分类查找 / 遍历所有分类 |
+
+### 列表过滤
+
+`GET /kb/files` 只返回 `.txt` 且不超过 1MB 的文件（常量见 [knowledge_base.py](knowledge_base.py) 的
+`KB_FILE_SUFFIX` / `KB_FILE_MAX_BYTES`），避免像 `data/market/market_data.csv`（4.4MB）
+这种大文件把前端文本框拖死。
+
+### 从旧版（扁平 data/ 目录）迁移
+
+如果手上还是改造前的结构（`data/*.txt` + 没有 `category` 的向量）：
+
+```bash
+python migrate_to_categories.py --dry-run    # 先看计划，零副作用
+python migrate_to_categories.py              # 真正执行
+```
+
+脚本做的事：复制备份 `chroma_db/` -> `chroma_db.bak/` → 把 `data/*.txt` 移进 `data/market/`
+→ **就地**给已有向量补 `category` / `content_md5`（只改 metadata，不重新嵌入）
+→ 重写 `md5.text` → 对仍未入库的文件调 `add_new_file` 补齐缺口。
+
+幂等、可重复运行、分批带进度；中途失败直接重跑续做。**执行前请停掉 uvicorn 与 streamlit**，
+Chroma 的 sqlite 被占用时备份不安全。
 
 ## 环境要求
 
@@ -124,7 +196,7 @@ streamlit run app_file_uploader.py
 `data/`、`chroma_db/`、`md5.text` 都是运行时状态且不入库（见 `.gitignore`），
 **克隆下来是空的**。此时直接提问会得到「无相关资料」，因为向量库里没有任何内容。
 
-请先在「知识库管理」页上传 txt，或调 `POST /kb/files`，再提问。
+请先在「知识库管理」页选好数据源再上传 txt，或调 `POST /kb/files`（记得带 `category`），再提问。
 
 ## 验证方式
 
@@ -135,10 +207,13 @@ streamlit run app_file_uploader.py
 
 在 `/docs` 里可以直接填参数试接口。最快的端到端验证：
 
-1. `GET /kb/files` — 应返回 `{"files": [], "total": 0}`（首次为空）
-2. `POST /kb/files`，body `{"name": "demo.txt", "content": "退货政策：签收后 7 天内可无理由退货。"}`
-3. `POST /qa/ask`，body `{"query": "退货政策是几天？", "session_id": "user_001"}`
+1. `GET /kb/categories` — 应返回 5 个数据源
+2. `GET /kb/files?category=iwiki` — 首次为空：`{"files": [], "total": 0}`
+3. `POST /kb/files`，body
+   `{"name": "demo.txt", "content": "退货政策：签收后 7 天内可无理由退货。", "category": "iwiki"}`
+4. `POST /qa/ask`，body `{"query": "退货政策是几天？", "session_id": "user_001", "category": "iwiki"}`
    — `answer` 应基于刚上传的内容作答，`references` 里应出现 `demo.txt`
+5. 把 `category` 换成 `market` 再问一次 — 同一问题应当**答不出来**，这就证明分类隔离生效了
 
 ## 接口清单
 
@@ -146,47 +221,52 @@ streamlit run app_file_uploader.py
 
 | 方法 | 路径 | 请求体 | 响应 |
 | --- | --- | --- | --- |
-| POST | `/qa/ask` | `{query, session_id}` | `{answer, references, session_id, retrieval_debug}` |
+| POST | `/qa/ask` | `{query, session_id, category?}` | `{answer, references, session_id, retrieval_debug}` |
 
 知识库域：
 
-| 方法 | 路径 | 请求体 | 响应 |
+| 方法 | 路径 | 参数 | 响应 |
 | --- | --- | --- | --- |
-| GET | `/kb/files` | — | `{files: [{name, size_kb, update_time}], total}` |
-| GET | `/kb/files/{name}` | — | `{name, content}`；文件不存在返回 404 |
-| POST | `/kb/files` | `{name, content}` | `{name, status, message}` |
-| PUT | `/kb/files/{name}` | `{content}` | `{name, status, message}` |
-| DELETE | `/kb/files/{name}` | — | `{name, status, message}` |
+| GET | `/kb/categories` | — | `{categories: {market: "集市帖子", ...}, total}` |
+| GET | `/kb/files` | `category?`（query） | `{files: [{name, category, size_kb, update_time}], total}` |
+| GET | `/kb/files/{name}` | `category?`（query） | `{name, content}`；文件不存在 404 |
+| POST | `/kb/files` | body `{name, content, category}` | `{name, category, status, message}` |
+| PUT | `/kb/files/{name}` | `category`（query）+ body `{content}` | `{name, category, status, message}` |
+| DELETE | `/kb/files/{name}` | `category`（query） | `{name, category, status, message}` |
 
-约定：
+带 `?` 的是可选。约定：
 
-- 请求与响应都由 Pydantic 模型定义，字段缺失或类型错误返回 422。
-- `status` 取值 `success` / `skipped` / `error`；内容重复时返回 `skipped`。
+- 请求与响应都由 Pydantic 模型定义，字段缺失或类型错误返回 `422`。
+- `category` 缺失、为空或不在白名单内：读写类接口返回 `400`，响应体形如 `{"detail": "category 必填"}`。
+- `status` 取值 `success` / `skipped` / `error`；同源同内容重复上传返回 `skipped`。
 - 所有路由都是同步 `def`，由 FastAPI 丢到线程池执行。
-- `session_id` 用于区分会话历史，缺省 `user_001`。
+- `session_id` 用于区分会话历史，缺省 `user_001`；它与 `category` 互不影响（历史不按数据源隔离）。
 
 ## Agent Tool 说明
 
-[agent_tools.py](agent_tools.py) 提供 6 个工具，**进程内直调 `RAGApp`，不经过 HTTP**。
+[agent_tools.py](agent_tools.py) 提供 7 个工具，**进程内直调 `RAGApp`，不经过 HTTP**。
 Agent 与小秋所在的进程需要能 import 本项目，并且能读到 `.env`（`app_core` 已统一加载）。
 
 | Tool | 入参 | 成功时 `data` |
 | --- | --- | --- |
-| `tool_ask` | `query`, `session_id="user_001"` | `{answer, references, session_id, retrieval_debug}` |
-| `tool_search_kb` | `query`, `k=5` | `[{source, content, score}]` |
-| `tool_list_files` | — | `[{name, size_kb, update_time}]` |
-| `tool_get_file_content` | `name` | `{name, content}` |
-| `tool_add_file` | `name`, `content` | `{name, status, message}` |
-| `tool_delete_file` | `name` | `{name, status, message}` |
+| `tool_ask` | `query`, `session_id="user_001"`, `category?` | `{answer, references, session_id, retrieval_debug}` |
+| `tool_search_kb` | `query`, `k=5`, `category?` | `[{source, category, content, score}]` |
+| `tool_list_categories` | — | `{market: "集市帖子", ...}` |
+| `tool_list_files` | `category?` | `[{name, category, size_kb, update_time}]` |
+| `tool_get_file_content` | `name`, `category?` | `{name, category, content}` |
+| `tool_add_file` | `name`, `content`, `category` | `{name, category, status, message}` |
+| `tool_delete_file` | `name`, `category` | `{name, category, status, message}` |
+
+带 `?` 的是可选，含义与 HTTP 接口一致：不传 `category` 表示跨所有数据源。
 
 返回结构统一为信封格式，**任何异常都会被捕获后返回，不会抛给 Agent**：
 
 ```python
 {"status": "ok",    "data": ...}
-{"status": "error", "error": "读取文件失败：..."}
+{"status": "error", "error": "新增文件失败：category 必填"}
 ```
 
-`TOOL_SPECS` 是这 6 个工具的手写 JSON Schema 描述（名称、说明、参数、返回），
+`TOOL_SPECS` 是这 7 个工具的手写 JSON Schema 描述（名称、说明、参数、返回），
 供任意 Agent 框架注册使用，不绑定具体框架。
 
 可选适配器：`to_langchain_tools()` 会把它们包成 LangChain `StructuredTool`，
@@ -211,11 +291,17 @@ Agent 与小秋所在的进程需要能 import 本项目，并且能读到 `.env
 
 其他：
 
-- **上传才能入库**：文件必须通过「知识库管理」页或 `POST /kb/files` 上传。
-  直接把 txt 拷进 `data/` 目录**不会**被向量化——它会出现在文件列表里，但检索永远命中不到。
+- **上传才能入库**：文件必须通过「知识库管理」页或 `POST /kb/files` 上传（并带上 `category`）。
+  直接把 txt 拷进 `data/{category}/` 目录**不会**被向量化——它会出现在文件列表里，但检索永远命中不到。
+- **同内容重复上传不会报错，但也不会重复入库**：`add_new_file` 先落盘再查 md5，
+  重复内容返回 `skipped`，于是文件在磁盘上存在、却没有对应向量。
+  这是去重的预期行为，但排查「列表里有、检索查不到」时先看这一条。
 - 运行时状态不入库：`data/`、`chroma_db/`、`chat_histories/`、`md5.text`、`.env` 均已被 `.gitignore` 忽略。
-- 迁移或备份时，`data/`、`chroma_db/`、`md5.text` 三者的状态需要一起带走，否则会出现「有文件没向量」的不一致。
+- 迁移或备份时，`data/{category}/`、`chroma_db/`、`md5.text` 三者的状态要一起带走，
+  否则会出现「有文件没向量」的不一致。
 - 本地状态是明文的：向量库、原文、会话历史都没有加密。
+- **category 是逻辑隔离，不是安全边界**：所有数据源共用同一个进程和同一份 API Key，
+  无鉴权的调用方可以查询任意 `category`。要真正隔离，得靠独立的服务与凭证。
 - 未做并发设计：同步路由跑在线程池里会真并发，`md5.text` 的读改写加了进程内锁（跨进程无效），
   但 Chroma 侧没有加锁，不适合多进程同时大量写。
 - 环境变量 `DASHSCOPE_API_KEY` 缺失时，服务会在构造模型客户端时就启动失败——这是预期行为。

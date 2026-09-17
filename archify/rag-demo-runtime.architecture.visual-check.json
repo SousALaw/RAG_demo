@@ -6,8 +6,8 @@
   "visualReview": "pending",
   "artifact": {
     "path": "C:\\ai\\RAG_demo\\archify\\rag-demo-runtime.architecture.html",
-    "sha256": "3308f67377aace28a43e009026318b317fff421fb86e92f08c4959f35eb7a888",
-    "bytes": 644749
+    "sha256": "5869eec8a748e01c98f93c4adab66d304eddae2b30ac5fd98656fe8a992bc891",
+    "bytes": 646028
   },
   "state": {
     "detail": "read",

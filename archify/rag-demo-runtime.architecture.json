@@ -2,10 +2,10 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "RAG_demo 双接口运行时架构",
+    "title": "RAG_demo 双接口 · 多数据源架构",
     "output": "archify/rag-demo-runtime.architecture.html",
     "quality_profile": "showcase",
-    "viewBox": [1700, 830]
+    "viewBox": [1700, 740]
   },
   "components": [
     {
@@ -13,15 +13,15 @@
       "type": "external",
       "label": "使用者浏览器",
       "sublabel": "localhost:8501",
-      "pos": [30, 200],
+      "pos": [30, 180],
       "size": [150, 70]
     },
     {
       "id": "ui",
       "type": "frontend",
       "label": "Streamlit 前端",
-      "sublabel": "app_qa.py · app_file_uploader.py",
-      "pos": [270, 200],
+      "sublabel": "问答页 · 知识库管理页",
+      "pos": [270, 180],
       "size": [200, 70]
     },
     {
@@ -29,7 +29,7 @@
       "type": "frontend",
       "label": "api_client.py",
       "sublabel": "httpx · RAG_API_BASE_URL",
-      "pos": [560, 200],
+      "pos": [560, 180],
       "size": [180, 70]
     },
     {
@@ -37,7 +37,7 @@
       "type": "backend",
       "label": "api_server.py",
       "sublabel": "FastAPI · /qa/* · /kb/*",
-      "pos": [830, 200],
+      "pos": [830, 180],
       "size": [190, 70]
     },
     {
@@ -45,7 +45,7 @@
       "type": "backend",
       "label": "RAGApp",
       "sublabel": "app_core.py · 唯一编排入口",
-      "pos": [830, 400],
+      "pos": [830, 360],
       "size": [200, 70]
     },
     {
@@ -53,47 +53,47 @@
       "type": "backend",
       "label": "RAGService",
       "sublabel": "rag.py · 经 vector_stores.py",
-      "pos": [1120, 400],
+      "pos": [1120, 360],
       "size": [190, 70]
     },
     {
       "id": "kb",
       "type": "backend",
       "label": "KnowledgeBaseService",
-      "sublabel": "knowledge_base.py",
-      "pos": [1120, 650],
-      "size": [210, 70]
+      "sublabel": "knowledge_base.py · category 隔离",
+      "pos": [1120, 590],
+      "size": [220, 70]
     },
     {
       "id": "chroma",
       "type": "database",
       "label": "Chroma 向量库",
-      "sublabel": "chroma_db/",
-      "pos": [1400, 400],
-      "size": [190, 70]
+      "sublabel": "chroma_db/ · 单集合 + category 过滤",
+      "pos": [1400, 360],
+      "size": [200, 70]
     },
     {
       "id": "files",
       "type": "database",
       "label": "知识库文件",
-      "sublabel": "data/ + md5.text",
-      "pos": [1400, 650],
-      "size": [180, 70]
+      "sublabel": "data/{category}/ · md5.text",
+      "pos": [1400, 590],
+      "size": [200, 70]
     },
     {
       "id": "agent",
       "type": "external",
       "label": "小秋 AI 助手",
       "sublabel": "内部助手",
-      "pos": [30, 650],
+      "pos": [30, 590],
       "size": [150, 70]
     },
     {
       "id": "tools",
       "type": "backend",
       "label": "agent_tools.py",
-      "sublabel": "6 个 Tool · 不经 HTTP",
-      "pos": [270, 650],
+      "sublabel": "7 个 Tool · 不经 HTTP",
+      "pos": [270, 590],
       "size": [200, 70]
     },
     {
@@ -110,7 +110,13 @@
       "kind": "region",
       "label": "本机进程 · C:\\ai\\RAG_demo",
       "wraps": ["ui", "client", "api", "core", "rag", "kb", "chroma", "files", "tools"],
-      "pad": 44
+      "pad": 42
+    },
+    {
+      "kind": "region",
+      "label": "多数据源逻辑隔离 · category = market / iwiki / college / turing / third_party",
+      "wraps": ["chroma", "files"],
+      "pad": 18
     },
     {
       "kind": "security-group",
@@ -151,12 +157,12 @@
       ]
     },
     {
-      "dot": "rose",
-      "title": "外部依赖（全部出网）",
+      "dot": "violet",
+      "title": "多数据源逻辑隔离",
       "items": [
-        "DashScope qwen3-max 负责全部生成",
-        "text-embedding-v4 负责全部向量化",
-        "无本地模型、无结果缓存、无离线降级路径"
+        "5 个数据源共用一个 Chroma 集合，靠 metadata 的 category 过滤",
+        "原文按 data/{category}/ 分目录，md5 去重按 (内容, 分类) 隔离",
+        "加新数据源只改 config_data 里的一行；category 不是安全边界"
       ]
     },
     {
@@ -165,7 +171,7 @@
       "items": [
         "API 无鉴权，默认仅监听 127.0.0.1",
         "chroma_db/、data/、md5.text 均为本地明文状态",
-        "文件必须经 API 或前端上传才会被向量化"
+        "写入必须带 category；检索可不带（跨所有源）"
       ]
     }
   ]
