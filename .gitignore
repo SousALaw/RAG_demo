@@ -20,6 +20,7 @@ env/
 
 # Project runtime data
 chroma_db/
+chroma_db.bak/
 chat_histories/
 md5.text
 data/

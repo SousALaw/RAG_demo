@@ -10,7 +10,7 @@ FastAPI 双接口层。
 
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,7 @@ rag_app = RAGApp()
 class AskRequest(BaseModel):
     query: str = Field(min_length=1, description="用户问题")
     session_id: str = Field(default="user_001", min_length=1, description="会话标识")
+    category: str | None = Field(default=None, description="只在该数据源内检索；留空则跨所有源")
 
 
 class AskResponse(BaseModel):
@@ -55,12 +56,18 @@ class AskResponse(BaseModel):
 
 class FileInfo(BaseModel):
     name: str
+    category: str
     size_kb: float
     update_time: str
 
 
 class FileListResponse(BaseModel):
     files: list[FileInfo]
+    total: int
+
+
+class CategoryListResponse(BaseModel):
+    categories: dict[str, str]
     total: int
 
 
@@ -72,6 +79,7 @@ class FileContentResponse(BaseModel):
 class AddFileRequest(BaseModel):
     name: str = Field(min_length=1, description="文件名")
     content: str = Field(min_length=1, description="文件文本内容")
+    category: str | None = Field(default=None, description="数据源分类；必填")
 
 
 class UpdateFileRequest(BaseModel):
@@ -80,6 +88,7 @@ class UpdateFileRequest(BaseModel):
 
 class MutationResponse(BaseModel):
     name: str
+    category: str = ""
     status: str
     message: str
 
@@ -90,7 +99,10 @@ class MutationResponse(BaseModel):
 def qa_ask(req: AskRequest) -> AskResponse:
     """基于知识库回答问题。"""
     try:
-        result = rag_app.ask(query=req.query, session_id=req.session_id)
+        result = rag_app.ask(query=req.query, session_id=req.session_id, category=req.category)
+    except ValueError as exc:
+        # category 为空或不在白名单内
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         # 未做结构化错误设计，只是让调用方能看见失败原因（例如缺少 API Key、超时）。
         raise HTTPException(status_code=502, detail=f"问答链路失败：{exc}")
@@ -99,39 +111,60 @@ def qa_ask(req: AskRequest) -> AskResponse:
 
 # ---------------- 知识库域 ----------------
 
+@app.get("/kb/categories", response_model=CategoryListResponse)
+def kb_list_categories() -> CategoryListResponse:
+    """列出所有数据源分类。"""
+    categories = rag_app.list_categories()
+    return CategoryListResponse(categories=categories, total=len(categories))
+
+
 @app.get("/kb/files", response_model=FileListResponse)
-def kb_list_files() -> FileListResponse:
+def kb_list_files(category: str | None = Query(default=None, description="只看某个数据源；留空遍历所有源")) -> FileListResponse:
     """列出知识库文件。"""
-    files = rag_app.list_files()
+    try:
+        files = rag_app.list_files(category=category)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return FileListResponse(files=files, total=len(files))
 
 
 @app.get("/kb/files/{name}", response_model=FileContentResponse)
-def kb_get_file(name: str) -> FileContentResponse:
+def kb_get_file(name: str, category: str | None = Query(default=None, description="数据源分类；留空跨分类查找")) -> FileContentResponse:
     """读取单个知识库文件内容。"""
     try:
-        content = rag_app.get_file_content(name)
+        content = rag_app.get_file_content(name, category=category)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"文件不存在：{normalize_filename(name)}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return FileContentResponse(name=normalize_filename(name), content=content)
 
 
 @app.post("/kb/files", response_model=MutationResponse)
 def kb_add_file(req: AddFileRequest) -> MutationResponse:
-    """新增知识库文件（落盘 + 向量化入库）。"""
-    return MutationResponse(**rag_app.add_file(name=req.name, content=req.content))
+    """新增知识库文件（落盘 + 向量化入库）。category 必填。"""
+    try:
+        return MutationResponse(**rag_app.add_file(name=req.name, content=req.content, category=req.category))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.put("/kb/files/{name}", response_model=MutationResponse)
-def kb_update_file(name: str, req: UpdateFileRequest) -> MutationResponse:
-    """覆盖知识库文件内容并重建向量。"""
-    return MutationResponse(**rag_app.update_file(name=name, content=req.content))
+def kb_update_file(name: str, req: UpdateFileRequest, category: str | None = Query(default=None, description="数据源分类；必填")) -> MutationResponse:
+    """覆盖知识库文件内容并重建向量。category 必填。"""
+    try:
+        return MutationResponse(**rag_app.update_file(name=name, content=req.content, category=category))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.delete("/kb/files/{name}", response_model=MutationResponse)
-def kb_delete_file(name: str) -> MutationResponse:
-    """删除知识库文件与对应向量。"""
-    return MutationResponse(**rag_app.delete_file(name))
+def kb_delete_file(name: str, category: str | None = Query(default=None, description="数据源分类；必填")) -> MutationResponse:
+    """删除知识库文件与对应向量。category 必填。"""
+    try:
+        return MutationResponse(**rag_app.delete_file(name, category=category))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 if __name__ == "__main__":

@@ -75,6 +75,23 @@ def render_qa_page() -> None:
     show_retrieval_debug = st.sidebar.toggle("显示检索调试信息", value=False)
     st.caption(f"后端 API：{api_client.get_base_url()}")
 
+    # 数据源选择：默认「全部」= 跨所有源检索
+    try:
+        categories = api_client.list_categories()
+    except Exception as exc:
+        categories = {}
+        st.sidebar.caption(f"分类获取失败：{exc}")
+
+    picked = st.sidebar.selectbox(
+        "数据源（检索范围）",
+        options=["全部"] + list(categories.keys()),
+        index=0,
+        key="qa_category",
+    )
+    category = None if picked == "全部" else picked
+    if category:
+        st.caption(f"当前只在「{categories.get(category, category)}」内检索")
+
     if "messages" not in st.session_state:
         st.session_state["messages"] = [
             {"role": "assistant", "content": "您好！我是智能客服，有什么可以帮助您的吗？"}
@@ -104,7 +121,7 @@ def render_qa_page() -> None:
         with st.spinner("AI正在思考..."):
             # 通过 HTTP 调后端 API；本页不再持有 RAGService 实例。
             try:
-                result = api_client.ask(query=prompt, session_id=SESSION_ID)
+                result = api_client.ask(query=prompt, session_id=SESSION_ID, category=category)
             except Exception as exc:
                 st.error(f"请求失败：{exc}")
 

@@ -20,9 +20,14 @@ class VectorStoreService(object):
         """
         return self.vector_store.as_retriever(search_kwargs={"k": config.similarity_filenum})
 
-    def similarity_search_with_relevance_scores(self, query: str, k: int) -> list[tuple[Document, float]]:
-        """返回带相关度分数的检索结果。"""
-        return self.vector_store.similarity_search_with_relevance_scores(query, k=k)
+    def similarity_search_with_relevance_scores(self, query: str, k: int, category: str | None = None) -> list[tuple[Document, float]]:
+        """返回带相关度分数的检索结果。
+
+        category 不为空时只在该分类内检索（Chroma 的 metadata 过滤），
+        为空时跨所有分类检索，与改造前行为一致。
+        """
+        where = {"category": category} if category else None
+        return self.vector_store.similarity_search_with_relevance_scores(query, k=k, filter=where)
     
 if __name__ == "__main__":
     from langchain_community.embeddings import DashScopeEmbeddings

@@ -27,61 +27,76 @@ def _get_app() -> RAGApp:
 
 # ---------------- Tools ----------------
 
-def tool_ask(query: str, session_id: str = DEFAULT_SESSION_ID) -> dict:
-    """基于知识库回答问题，返回答案与参考来源文件。"""
+def tool_ask(query: str, session_id: str = DEFAULT_SESSION_ID, category: str | None = None) -> dict:
+    """基于知识库回答问题，返回答案与参考来源文件。category 留空则跨所有数据源。"""
     try:
-        data = _get_app().ask(query=query, session_id=session_id)
+        data = _get_app().ask(query=query, session_id=session_id, category=category)
     except Exception as exc:
         return {"status": "error", "error": f"问答失败：{exc}"}
     return {"status": "ok", "data": data}
 
 
-def tool_search_kb(query: str, k: int = 5) -> dict:
-    """按相似度检索知识库切片，返回 [{source, content, score}]。"""
+def tool_search_kb(query: str, k: int = 5, category: str | None = None) -> dict:
+    """按相似度检索知识库切片，返回 [{source, category, content, score}]。"""
     try:
-        data = _get_app().search_kb(query=query, k=k)
+        data = _get_app().search_kb(query=query, k=k, category=category)
     except Exception as exc:
         return {"status": "error", "error": f"检索失败：{exc}"}
     return {"status": "ok", "data": data}
 
 
-def tool_list_files() -> dict:
-    """列出知识库中的全部文件。"""
+def tool_list_categories() -> dict:
+    """列出所有数据源分类（{key: 中文说明}）。"""
     try:
-        data = _get_app().list_files()
+        data = _get_app().list_categories()
+    except Exception as exc:
+        return {"status": "error", "error": f"列出分类失败：{exc}"}
+    return {"status": "ok", "data": data}
+
+
+def tool_list_files(category: str | None = None) -> dict:
+    """列出知识库文件。category 留空则列出所有分类。"""
+    try:
+        data = _get_app().list_files(category=category)
     except Exception as exc:
         return {"status": "error", "error": f"列出文件失败：{exc}"}
     return {"status": "ok", "data": data}
 
 
-def tool_get_file_content(name: str) -> dict:
-    """读取指定知识库文件的完整内容。"""
+def tool_get_file_content(name: str, category: str | None = None) -> dict:
+    """读取指定知识库文件的完整内容。category 留空则跨分类查找。"""
     try:
-        data = _get_app().get_file_content(name)
+        data = _get_app().get_file_content(name, category=category)
     except Exception as exc:
         return {"status": "error", "error": f"读取文件失败：{exc}"}
-    return {"status": "ok", "data": {"name": name, "content": data}}
+    return {"status": "ok", "data": {"name": name, "category": category or "", "content": data}}
 
 
-def tool_add_file(name: str, content: str) -> dict:
-    """新增知识库文件（落盘并向量化入库）。"""
+def tool_add_file(name: str, content: str, category: str | None = None) -> dict:
+    """新增知识库文件（落盘并向量化入库）。category 必填。"""
     try:
-        data = _get_app().add_file(name=name, content=content)
+        data = _get_app().add_file(name=name, content=content, category=category)
     except Exception as exc:
         return {"status": "error", "error": f"新增文件失败：{exc}"}
     return {"status": "ok", "data": data}
 
 
-def tool_delete_file(name: str) -> dict:
-    """删除知识库文件及其向量。"""
+def tool_delete_file(name: str, category: str | None = None) -> dict:
+    """删除知识库文件及其向量。category 必填。"""
     try:
-        data = _get_app().delete_file(name)
+        data = _get_app().delete_file(name, category=category)
     except Exception as exc:
         return {"status": "error", "error": f"删除文件失败：{exc}"}
     return {"status": "ok", "data": data}
 
 
 # ---------------- 工具描述 ----------------
+
+# category 参数在多个 tool 里重复出现，集中定义一份描述
+_CATEGORY_PROP = {
+    "type": "string",
+    "description": "数据源分类（market/iwiki/college/turing/third_party）；留空表示跨所有源",
+}
 
 TOOL_SPECS = [
     {
@@ -95,10 +110,11 @@ TOOL_SPECS = [
                     "type": "string",
                     "description": f"会话标识，默认 {DEFAULT_SESSION_ID}",
                 },
+                "category": _CATEGORY_PROP,
             },
             "required": ["query"],
         },
-        "returns": "{status, data:{answer, references, session_id}}",
+        "returns": "{status, data:{answer, references, session_id, retrieval_debug}}",
     },
     {
         "name": "tool_search_kb",
@@ -108,55 +124,74 @@ TOOL_SPECS = [
             "properties": {
                 "query": {"type": "string", "description": "检索关键词或问句"},
                 "k": {"type": "integer", "description": "返回条数，默认 5"},
+                "category": _CATEGORY_PROP,
             },
             "required": ["query"],
         },
-        "returns": "{status, data:[{source, content, score}]}",
+        "returns": "{status, data:[{source, category, content, score}]}",
+    },
+    {
+        "name": "tool_list_categories",
+        "description": "列出所有数据源分类及其中文说明。",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "returns": "{status, data:{market: '集市帖子', ...}}",
     },
     {
         "name": "tool_list_files",
-        "description": "列出知识库中的全部文件。",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-        "returns": "{status, data:[{name, size_kb, update_time}]}",
+        "description": "列出知识库文件；不传 category 则列出所有分类。",
+        "parameters": {
+            "type": "object",
+            "properties": {"category": _CATEGORY_PROP},
+            "required": [],
+        },
+        "returns": "{status, data:[{name, category, size_kb, update_time}]}",
     },
     {
         "name": "tool_get_file_content",
-        "description": "读取指定知识库文件的完整内容。",
+        "description": "读取指定知识库文件的完整内容；不传 category 则跨分类查找。",
         "parameters": {
             "type": "object",
-            "properties": {"name": {"type": "string", "description": "文件名"}},
+            "properties": {
+                "name": {"type": "string", "description": "文件名"},
+                "category": _CATEGORY_PROP,
+            },
             "required": ["name"],
         },
-        "returns": "{status, data:{name, content}}",
+        "returns": "{status, data:{name, category, content}}",
     },
     {
         "name": "tool_add_file",
-        "description": "新增知识库文件，内容会被向量化入库。",
+        "description": "新增知识库文件，内容会被向量化入库。category 必填。",
         "parameters": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "文件名"},
                 "content": {"type": "string", "description": "文件文本内容"},
+                "category": _CATEGORY_PROP,
             },
-            "required": ["name", "content"],
+            "required": ["name", "content", "category"],
         },
-        "returns": "{status, data:{name, status, message}}",
+        "returns": "{status, data:{name, category, status, message}}",
     },
     {
         "name": "tool_delete_file",
-        "description": "删除知识库文件及其向量。",
+        "description": "删除知识库文件及其向量。category 必填。",
         "parameters": {
             "type": "object",
-            "properties": {"name": {"type": "string", "description": "文件名"}},
-            "required": ["name"],
+            "properties": {
+                "name": {"type": "string", "description": "文件名"},
+                "category": _CATEGORY_PROP,
+            },
+            "required": ["name", "category"],
         },
-        "returns": "{status, data:{name, status, message}}",
+        "returns": "{status, data:{name, category, status, message}}",
     },
 ]
 
 _TOOL_FUNCS = {
     "tool_ask": tool_ask,
     "tool_search_kb": tool_search_kb,
+    "tool_list_categories": tool_list_categories,
     "tool_list_files": tool_list_files,
     "tool_get_file_content": tool_get_file_content,
     "tool_add_file": tool_add_file,
@@ -180,7 +215,7 @@ def to_langchain_tools() -> list:
     """【可选】把上面的纯函数包成 LangChain Tool。
 
     默认不启用；环境里没有 langchain 时返回空列表，不抛异常。
-    上面 6 个纯函数 + TOOL_SPECS 才是本模块的主接口。
+    上面 7 个纯函数 + TOOL_SPECS 才是本模块的主接口。
     """
     try:
         from langchain_core.tools import StructuredTool

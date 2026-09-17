@@ -56,35 +56,56 @@ def _file_path(name: str) -> str:
     return f"/kb/files/{quote(name, safe='')}"
 
 
+def _params(category: str | None) -> dict:
+    """只在指定了分类时才带上 category 查询参数。"""
+    return {"category": category} if category else {}
+
+
 # ---------------- 问答域 ----------------
 
-def ask(query: str, session_id: str = DEFAULT_SESSION_ID) -> dict:
-    """提问，返回 {answer, references, session_id}。"""
-    return _request("POST", "/qa/ask", json={"query": query, "session_id": session_id})
+def ask(query: str, session_id: str = DEFAULT_SESSION_ID, category: str | None = None) -> dict:
+    """提问，返回 {answer, references, session_id, retrieval_debug}。
+
+    category 留空表示跨所有数据源检索。
+    """
+    payload = {"query": query, "session_id": session_id}
+    if category:
+        payload["category"] = category
+    return _request("POST", "/qa/ask", json=payload)
 
 
 # ---------------- 知识库域 ----------------
 
-def list_files() -> list:
-    """列出知识库文件，返回 [{name, size_kb, update_time}]。"""
-    return _request("GET", "/kb/files").get("files", [])
+def list_categories() -> dict:
+    """列出所有数据源分类，返回 {category: 中文说明}。"""
+    return _request("GET", "/kb/categories").get("categories", {})
 
 
-def get_file_content(name: str) -> str:
-    """读取文件内容。"""
-    return _request("GET", _file_path(name)).get("content", "")
+def list_files(category: str | None = None) -> list:
+    """列出知识库文件，返回 [{name, category, size_kb, update_time}]。
+
+    category 留空表示遍历所有分类。
+    """
+    return _request("GET", "/kb/files", params=_params(category)).get("files", [])
 
 
-def add_file(name: str, content: str) -> dict:
-    """新增文件，返回 {name, status, message}。"""
-    return _request("POST", "/kb/files", json={"name": name, "content": content})
+def get_file_content(name: str, category: str | None = None) -> str:
+    """读取文件内容。category 留空时后端跨分类查找，返回首个命中。"""
+    return _request("GET", _file_path(name), params=_params(category)).get("content", "")
 
 
-def update_file(name: str, content: str) -> dict:
-    """覆盖文件内容，返回 {name, status, message}。"""
-    return _request("PUT", _file_path(name), json={"content": content})
+def add_file(name: str, content: str, category: str | None = None) -> dict:
+    """新增文件，返回 {name, category, status, message}。category 必填。"""
+    return _request(
+        "POST", "/kb/files", json={"name": name, "content": content, "category": category}
+    )
 
 
-def delete_file(name: str) -> dict:
-    """删除文件，返回 {name, status, message}。"""
-    return _request("DELETE", _file_path(name))
+def update_file(name: str, content: str, category: str | None = None) -> dict:
+    """覆盖文件内容，返回 {name, category, status, message}。category 必填。"""
+    return _request("PUT", _file_path(name), params=_params(category), json={"content": content})
+
+
+def delete_file(name: str, category: str | None = None) -> dict:
+    """删除文件，返回 {name, category, status, message}。category 必填。"""
+    return _request("DELETE", _file_path(name), params=_params(category))

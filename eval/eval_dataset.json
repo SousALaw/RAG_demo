@@ -1,0 +1,102 @@
+[
+  {
+    "question": "舍友假期疯掉怎么办？",
+    "expected_sources": ["market_2411.txt"],
+    "expected_keywords": ["二教", "晚回宿舍"]
+  },
+  {
+    "question": "珠海宿舍的桌子和南校一样吗？",
+    "expected_sources": ["market_2415.txt"],
+    "expected_keywords": ["珠海", "小"]
+  },
+  {
+    "question": "搬校区行李纸箱需要自备吗？",
+    "expected_sources": ["market_2357.txt"],
+    "expected_keywords": ["学院", "纸箱"]
+  },
+  {
+    "question": "珠海可以用电动滑板车吗？",
+    "expected_sources": ["market_2359.txt", "market_2360.txt", "market_69.txt"],
+    "expected_keywords": ["珠海", "备案"]
+  },
+  {
+    "question": "珠海校区有什么好吃的？",
+    "expected_sources": ["market_2364.txt"],
+    "expected_keywords": ["霸王茶姬", "北门", "宝龙"]
+  },
+  {
+    "question": "软工需要续航好的电脑吗？",
+    "expected_sources": ["market_2353.txt"],
+    "expected_keywords": ["续航", "轻薄本"]
+  },
+  {
+    "question": "买续航好的电脑 windows 还是苹果好？",
+    "expected_sources": ["market_2354.txt"],
+    "expected_keywords": ["MacBook", "续航"]
+  },
+  {
+    "question": "公选课挂了会有什么影响吗？",
+    "expected_sources": ["market_2366.txt"],
+    "expected_keywords": ["公选"]
+  },
+  {
+    "question": "夏令营前想提前联系本院老师该怎么措辞？",
+    "expected_sources": ["market_2349.txt"],
+    "expected_keywords": ["钉钉", "邮件"]
+  },
+  {
+    "question": "搬宿舍大概什么时候？",
+    "expected_sources": ["market_2362.txt"],
+    "expected_keywords": ["考试周", "学院通知"]
+  },
+  {
+    "question": "软工转专业怎么组宿舍？",
+    "expected_sources": ["market_2369.txt"],
+    "expected_keywords": ["班级", "组宿舍"]
+  },
+  {
+    "question": "搬宿舍东西太多不知道怎么处理怎么办？",
+    "expected_sources": ["market_2386.txt"],
+    "expected_keywords": ["公仔", "拼图"]
+  },
+  {
+    "question": "外校的车能进学校吗？",
+    "expected_sources": ["market_2392.txt", "market_69.txt"],
+    "expected_keywords": ["外校"]
+  },
+  {
+    "question": "电脑白屏是什么原因？",
+    "expected_sources": ["market_2406.txt"],
+    "expected_keywords": ["重启", "白屏"]
+  },
+  {
+    "question": "大一物理是 a 卷还是 b 卷？",
+    "expected_sources": ["market_2348.txt"],
+    "expected_keywords": ["物理", "卷"]
+  },
+  {
+    "question": "六级一定要考吗？",
+    "expected_sources": ["market_2358.txt"],
+    "expected_keywords": ["六级"]
+  },
+  {
+    "question": "租房最心痛的事是什么？",
+    "expected_sources": ["market_2356.txt"],
+    "expected_keywords": ["冷气", "没关"]
+  },
+  {
+    "question": "珠海 24 级住哪一栋宿舍？",
+    "expected_sources": ["market_2365.txt"],
+    "expected_keywords": ["通知", "槿园"]
+  },
+  {
+    "question": "24级2班男生找舍友对作息有什么要求？",
+    "expected_sources": ["market_2390.txt", "market_2401.txt"],
+    "expected_keywords": ["熄灯", "12点"]
+  },
+  {
+    "question": "降转的同学怎么互相认识？",
+    "expected_sources": ["market_2363.txt"],
+    "expected_keywords": ["降转", "企微"]
+  }
+]

@@ -20,10 +20,10 @@ def decode_text_file(file_bytes: bytes) -> str:
         return file_bytes.decode("gbk")
 
 
-def _load_files() -> list:
+def _load_files(category: str | None = None) -> list:
     """从 API 取文件列表，失败时提示并返回空列表。"""
     try:
-        return api_client.list_files()
+        return api_client.list_files(category=category)
     except Exception as exc:
         st.error(f"请求失败：{exc}")
         return []
@@ -44,6 +44,25 @@ def _render_mutation(result: dict) -> None:
 def render_uploader_page() -> None:
     st.title("知识库管理")
     st.caption(f"在此模块中可对知识库文件进行增删改查。后端 API：{api_client.get_base_url()}")
+
+    # 数据源选择：下面四个 Tab 全部只操作选中的分类。
+    # 这里不提供「全部」——新增文件必须落到某个具体的分类里。
+    try:
+        categories = api_client.list_categories()
+    except Exception as exc:
+        st.error(f"请求失败：{exc}")
+        return
+
+    if not categories:
+        st.warning("后端没有返回任何数据源分类，请检查 config_data.knowledge_categories。")
+        return
+
+    category = st.selectbox(
+        "数据源分类",
+        options=list(categories.keys()),
+        format_func=lambda key: f"{categories[key]}（{key}）",
+        key="kb_category",
+    )
 
     tab_create, tab_read, tab_update, tab_delete = st.tabs(["新增", "查询", "修改", "删除"])
 
@@ -96,7 +115,9 @@ def render_uploader_page() -> None:
                                 continue
 
                             try:
-                                result = api_client.add_file(name=file_item.name, content=text)
+                                result = api_client.add_file(
+                                    name=file_item.name, content=text, category=category
+                                )
                             except Exception as exc:
                                 fail_count += 1
                                 detail_messages.append(f"[失败]，文件{file_item.name}：{exc}")
@@ -117,8 +138,8 @@ def render_uploader_page() -> None:
                             st.write(msg)
 
         with right_col:
-            st.markdown("### 已上传文件")
-            uploaded_files = _load_files()
+            st.markdown(f"### 已上传文件（{categories[category]}）")
+            uploaded_files = _load_files(category)
             st.caption(f"当前共 {len(uploaded_files)} 个文件")
 
             if not uploaded_files:
@@ -129,7 +150,7 @@ def render_uploader_page() -> None:
     with tab_read:
         st.subheader("查询知识库文件")
         keyword = st.text_input("按文件名关键词筛选", key="kb_search_keyword")
-        file_items = _load_files()
+        file_items = _load_files(category)
 
         # 关键词过滤只作用于已取回的列表，属于展示逻辑。
         keyword = (keyword or "").strip().lower()
@@ -146,14 +167,14 @@ def render_uploader_page() -> None:
                 key="kb_read_select",
             )
             try:
-                content = api_client.get_file_content(selected_name)
+                content = api_client.get_file_content(selected_name, category=category)
                 st.text_area("文件内容", value=content, height=260, disabled=True)
             except Exception as exc:
                 st.error(f"请求失败：{exc}")
 
     with tab_update:
         st.subheader("修改知识库文件")
-        file_items = _load_files()
+        file_items = _load_files(category)
         if not file_items:
             st.info("暂无可修改的文件。")
         else:
@@ -165,7 +186,7 @@ def render_uploader_page() -> None:
 
             old_content = None
             try:
-                old_content = api_client.get_file_content(update_name)
+                old_content = api_client.get_file_content(update_name, category=category)
             except Exception as exc:
                 st.error(f"请求失败：{exc}")
 
@@ -179,7 +200,9 @@ def render_uploader_page() -> None:
                 if st.button("保存修改", type="primary", key="kb_update_btn"):
                     with st.spinner("正在更新文件..."):
                         try:
-                            result = api_client.update_file(name=update_name, content=new_content)
+                            result = api_client.update_file(
+                                name=update_name, content=new_content, category=category
+                            )
                         except Exception as exc:
                             st.error(f"请求失败：{exc}")
                         else:
@@ -187,7 +210,7 @@ def render_uploader_page() -> None:
 
     with tab_delete:
         st.subheader("删除知识库文件")
-        file_items = _load_files()
+        file_items = _load_files(category)
         if not file_items:
             st.info("暂无可删除的文件。")
         else:
@@ -211,7 +234,7 @@ def render_uploader_page() -> None:
                     with st.spinner("正在删除文件..."):
                         for filename in delete_batch_names:
                             try:
-                                result = api_client.delete_file(filename)
+                                result = api_client.delete_file(filename, category=category)
                             except Exception as exc:
                                 fail_files.append(f"{filename}：{exc}")
                                 continue
