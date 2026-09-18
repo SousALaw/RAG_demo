@@ -20,6 +20,12 @@
 
 架构图见 [archify/rag-demo-runtime.architecture.html](archify/rag-demo-runtime.architecture.html)（可直接用浏览器打开）。
 
+详细设计与评估见 [docs/](docs/)：
+[设计说明](docs/design.md)（混合检索与重排序、BM25 分词坑、默认值依据、状态一致性）｜
+[评估说明](docs/eval.md)（评估口径、实测数据、困难集构造）。
+
+本项目基于 [dwgu-ai/RAG_demo](https://github.com/dwgu-ai/RAG_demo) 修改，原项目 MIT 许可（见 [LICENSE](LICENSE)）。
+
 ## 项目结构
 
 ```
@@ -47,10 +53,10 @@
 | [app_file_uploader.py](app_file_uploader.py) | 知识库管理页（Streamlit），四个 Tab 按选中数据源操作 |
 | [rag.py](rag.py) | 检索与生成链路，`RAGService` |
 | [knowledge_base.py](knowledge_base.py) | 切分、入库、增删改、category 隔离，`KnowledgeBaseService` |
-| [vector_stores.py](vector_stores.py) | Chroma 检索封装，`VectorStoreService` |
+| [vector_stores.py](vector_stores.py) | Chroma 检索封装，`VectorStoreService`；另含 BM25 索引、混合检索 `hybrid_search`、精排 `rerank` |
 | [file_history_store.py](file_history_store.py) | 会话历史落盘（滑动窗口 + 磁盘上限） |
-| [config_data.py](config_data.py) | 数据源字典、模型名、分块、检索阈值、上下文长度等配置 |
-| [migrate_to_categories.py](migrate_to_categories.py) | 一次性迁移脚本：旧版扁平 `data/` -> 按 category 分目录 |
+| [config_data.py](config_data.py) | 数据源字典、模型名、分块、检索阈值、混合检索/重排开关、上下文长度等配置 |
+| [eval/run_eval.py](eval/run_eval.py) | 评估脚本：三种检索模式对比，含 MRR@5 / Recall@K |
 
 ## 数据源分类（category）
 
@@ -100,22 +106,6 @@ md5.text              # 每行 "content_md5<TAB>category"
 `KB_FILE_SUFFIX` / `KB_FILE_MAX_BYTES`），避免像 `data/market/market_data.csv`（4.4MB）
 这种大文件把前端文本框拖死。
 
-### 从旧版（扁平 data/ 目录）迁移
-
-如果手上还是改造前的结构（`data/*.txt` + 没有 `category` 的向量）：
-
-```bash
-python migrate_to_categories.py --dry-run    # 先看计划，零副作用
-python migrate_to_categories.py              # 真正执行
-```
-
-脚本做的事：复制备份 `chroma_db/` -> `chroma_db.bak/` → 把 `data/*.txt` 移进 `data/market/`
-→ **就地**给已有向量补 `category` / `content_md5`（只改 metadata，不重新嵌入）
-→ 重写 `md5.text` → 对仍未入库的文件调 `add_new_file` 补齐缺口。
-
-幂等、可重复运行、分批带进度；中途失败直接重跑续做。**执行前请停掉 uvicorn 与 streamlit**，
-Chroma 的 sqlite 被占用时备份不安全。
-
 ## 环境要求
 
 - Python 3.11+（开发环境实测 3.11.16）
@@ -135,7 +125,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-依赖包含：`fastapi`、`uvicorn`、`httpx`、`python-dotenv`、`streamlit`、`langchain` 系列、`langchain-chroma`、`dashscope`。
+依赖包含：`streamlit`、`fastapi`、`uvicorn`、`httpx`、`pydantic`、`python-dotenv`、
+`dashscope`、`langchain-core` / `langchain-community` / `langchain-classic`（`EnsembleRetriever`
+在这里）/ `langchain-chroma` / `langchain-text-splitters`，以及混合检索用的 `rank-bm25`
+与中文分词用的 `jieba`。
 
 > 若你的虚拟环境里没有 pip（`No module named pip`），可用 [uv](https://github.com/astral-sh/uv) 安装：
 > `uv pip install -r requirements.txt --python .venv\Scripts\python.exe`
@@ -289,7 +282,20 @@ Agent 与小秋所在的进程需要能 import 本项目，并且能读到 `.env
 - 若确实需要，同时设置 `RAG_API_HOST=0.0.0.0`（或用 `--host 0.0.0.0` 启动），
   并务必限制来源 IP。
 
-其他：
+### 检索相关配置
+
+两个检索开关在 [config_data.py](config_data.py)，默认 `hybrid_search_enabled = True`、
+`rerank_enabled = False`：
+
+- **重排序默认关闭。** 它在困难场景（用户提问与原文措辞差异大）上实测有效
+  （困难集 MRR 0.820 → 0.901、召回 89.2% → 97.3%），但在简单题上可能退步，
+  所以保守默认关。**困难场景建议开启** `rerank_enabled`。
+- 开启后注意**重排按输入 token 计费**，粗召回有 30 篇，`rerank_max_candidates`（默认 10）
+  用来截断送进去的篇数。
+
+依据与数据见 [docs/design.md](docs/design.md) 与 [docs/eval.md](docs/eval.md)。
+
+### 已知限制
 
 - **上传才能入库**：文件必须通过「知识库管理」页或 `POST /kb/files` 上传（并带上 `category`）。
   直接把 txt 拷进 `data/{category}/` 目录**不会**被向量化——它会出现在文件列表里，但检索永远命中不到。
@@ -304,6 +310,9 @@ Agent 与小秋所在的进程需要能 import 本项目，并且能读到 `.env
   无鉴权的调用方可以查询任意 `category`。要真正隔离，得靠独立的服务与凭证。
 - 未做并发设计：同步路由跑在线程池里会真并发，`md5.text` 的读改写加了进程内锁（跨进程无效），
   但 Chroma 侧没有加锁，不适合多进程同时大量写。
+- **BM25 索引是进程内内存**：当前是单 worker 部署，所以没问题；一旦改成 `--workers N`，
+  每个 worker 都会各自持有一份 BM25 索引（内存 ×N）且彼此不同步——A worker 里上传的文件，
+  B worker 要等自己的索引失效重建后才用 BM25 检得到。多 worker 部署前需要先解决这一点。
 - 环境变量 `DASHSCOPE_API_KEY` 缺失时，服务会在构造模型客户端时就启动失败——这是预期行为。
 
 ## 说明
