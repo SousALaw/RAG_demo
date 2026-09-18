@@ -1,11 +1,23 @@
-streamlit==1.56.0
-langchain==1.2.15
-langchain-core>=1.2.10
-langchain-community==0.4.1
-langchain-chroma==1.1.0
-langchain-text-splitters==1.1.1
-dashscope==1.25.16
-python-dotenv==1.2.3
-fastapi==0.141.1
-httpx==0.28.1
-uvicorn==0.52.4
+# ===== Web 层 =====
+streamlit==1.56.0            # 前端两个 Streamlit 页面（app_qa.py / app_file_uploader.py）
+fastapi==0.141.1             # 后端 API 框架（api_server.py）
+uvicorn==0.52.4              # ASGI server，api_server.py 的 __main__ 直接调它启动
+httpx==0.28.1                # api_client.py 用它调后端 API（前端唯一的出网方式）
+pydantic==2.13.5             # api_server.py 直接 import（BaseModel / Field），须显式声明
+
+# ===== LangChain =====
+langchain-core==1.6.2        # runnables / prompts / documents / messages / output_parsers
+langchain-community==0.4.1   # DashScope embeddings、ChatTongyi、BM25Retriever
+langchain-classic==1.0.3     # EnsembleRetriever 在这里（langchain 1.x 已迁出，直接 import 故显式声明）
+langchain-chroma==1.1.0      # Chroma 向量库集成
+langchain-text-splitters==1.1.1  # RecursiveCharacterTextSplitter
+
+# ===== 模型服务 =====
+dashscope==1.25.16           # embedding / chat / rerank 三个接口都用它
+
+# ===== 混合检索 =====
+rank-bm25==0.2.2             # BM25Retriever 的运行时依赖（我们间接使用，不直接 import）
+jieba==0.42.1                # BM25 的中文分词（默认 text.split() 对中文等于失效）
+
+# ===== 配置 =====
+python-dotenv==1.2.3         # 读 .env 里的 DASHSCOPE_API_KEY

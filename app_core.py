@@ -89,19 +89,30 @@ class RAGApp(object):
         """新增文件并写入向量库。category 必填，为空会抛 ValueError。"""
         safe_name = normalize_filename(name)
         message = self.kb.add_new_file(filename=safe_name, data=content, category=category)
-        return self._result(safe_name, message, category)
+        return self._after_write(category, self._result(safe_name, message, category))
 
     def update_file(self, name: str, content: str, category: str | None = None) -> dict:
         """覆盖文件内容并重建该文件的向量。category 必填。"""
         safe_name = normalize_filename(name)
         message = self.kb.update_file(filename=safe_name, new_data=content, category=category)
-        return self._result(safe_name, message, category)
+        return self._after_write(category, self._result(safe_name, message, category))
 
     def delete_file(self, name: str, category: str | None = None) -> dict:
         """删除本地文件与向量库切片。category 必填。"""
         safe_name = normalize_filename(name)
         message = self.kb.delete_file(safe_name, category=category)
-        return self._result(safe_name, message, category)
+        return self._after_write(category, self._result(safe_name, message, category))
+
+    def _after_write(self, category: str | None, result: dict) -> dict:
+        """写操作成功后让 BM25 缓存失效，并原样返回 result。
+
+        为什么放在这里：BM25 索引缓存挂在 VectorStoreService 上，而写操作走的是
+        KnowledgeBaseService，两者是各自独立的实例；RAGApp 是唯一同时持有两者的
+        编排层。不做这一步的话，长驻进程里「刚上传的文件」用 BM25 那一路检索不到。
+        """
+        if result.get("status") == "success":
+            self.rag.vector_store_service.invalidate_bm25_index(category)
+        return result
 
     @staticmethod
     def _result(name: str, message: str, category: str | None = None) -> dict:

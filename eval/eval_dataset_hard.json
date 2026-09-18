@@ -1,0 +1,483 @@
+[
+  {
+    "question": "不是科创班的普通同学，适合选那门以创业项目实践为主的专选课吗？",
+    "expected_sources": [
+      "market_4328.txt"
+    ],
+    "expected_keywords": [
+      "科创班"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "从珠海去澳门，坐轻轨可以在哪个车站过关？",
+    "expected_sources": [
+      "market_3928.txt"
+    ],
+    "expected_keywords": [
+      "横琴"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "在深圳实习的话，一个月大概能剩下多少钱？",
+    "expected_sources": [
+      "market_5764.txt"
+    ],
+    "expected_keywords": [
+      "租房"
+    ],
+    "_note": {
+      "base_rank": 0,
+      "hyb_rank": 5
+    }
+  },
+  {
+    "question": "作业要求交压缩包，能不能把 zip 直接改名当成 rar 交上去？",
+    "expected_sources": [
+      "market_1953.txt"
+    ],
+    "expected_keywords": [
+      "rar"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "毕业去大厂的薪资大概是什么水平？",
+    "expected_sources": [
+      "market_2999.txt"
+    ],
+    "expected_keywords": [
+      "大厂"
+    ],
+    "_note": {
+      "base_rank": 2,
+      "hyb_rank": 4
+    }
+  },
+  {
+    "question": "想课余自己再补 C++，看哪本书比较合适？",
+    "expected_sources": [
+      "market_3166.txt"
+    ],
+    "expected_keywords": [
+      "primer"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "想读真正的大模型方向，咱们院有老师在带吗？",
+    "expected_sources": [
+      "market_4488.txt"
+    ],
+    "expected_keywords": [
+      "没有"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "数据结构期中只做出六道题，是不是该考虑转专业了？",
+    "expected_sources": [
+      "market_4805.txt"
+    ],
+    "expected_keywords": [
+      "static"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "平时基本不举手发言，概统的平时成绩会吃亏吗？",
+    "expected_sources": [
+      "market_5070.txt"
+    ],
+    "expected_keywords": [
+      "99"
+    ],
+    "_note": {
+      "base_rank": 0,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "珠海校区的包裹一般送到哪里去取？",
+    "expected_sources": [
+      "market_5625.txt"
+    ],
+    "expected_keywords": [
+      "菜鸟驿站"
+    ],
+    "_note": {
+      "base_rank": 0,
+      "hyb_rank": 3
+    }
+  },
+  {
+    "question": "集市上分享的那些期末速成课，讲得怎么样？",
+    "expected_sources": [
+      "market_284.txt"
+    ],
+    "expected_keywords": [
+      "编译原理"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "大二就开始刷算法题合适吗？",
+    "expected_sources": [
+      "market_136.txt"
+    ],
+    "expected_keywords": [
+      "方向"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "保研的名额比例大概是多少？",
+    "expected_sources": [
+      "market_1809.txt"
+    ],
+    "expected_keywords": [
+      "30"
+    ],
+    "_note": {
+      "base_rank": 3,
+      "hyb_rank": 2
+    }
+  },
+  {
+    "question": "中珠哪个食堂的饺子比较值得吃？",
+    "expected_sources": [
+      "market_4660.txt"
+    ],
+    "expected_keywords": [
+      "荔园"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "六级考试必须参加吗，不考会有什么影响？",
+    "expected_sources": [
+      "market_2358.txt"
+    ],
+    "expected_keywords": [
+      "六级"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "181宿舍的床位是怎么摆的？",
+    "expected_sources": [
+      "market_18.txt"
+    ],
+    "expected_keywords": [
+      "两张床"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "广州长隆有什么值得玩的项目？",
+    "expected_sources": [
+      "market_55.txt"
+    ],
+    "expected_keywords": [
+      "马戏"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "新生把档案寄到学校，地址要写到什么程度？",
+    "expected_sources": [
+      "market_45.txt"
+    ],
+    "expected_keywords": [
+      "邮编"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "宿舍电路能带动大功率电器吗？",
+    "expected_sources": [
+      "market_64.txt"
+    ],
+    "expected_keywords": [
+      "短路"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "学校的排名到底靠不靠谱，官方有在用吗？",
+    "expected_sources": [
+      "market_1613.txt"
+    ],
+    "expected_keywords": [
+      "学科评估"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "从软工转到计算机学院划算吗？",
+    "expected_sources": [
+      "market_2102.txt"
+    ],
+    "expected_keywords": [
+      "压分"
+    ],
+    "_note": {
+      "base_rank": 2,
+      "hyb_rank": 0
+    }
+  },
+  {
+    "question": "业余时间学 Unity 做游戏，对以后就业有帮助吗？",
+    "expected_sources": [
+      "market_3756.txt"
+    ],
+    "expected_keywords": [
+      "美术"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "校内的麦当劳什么时候能开业？",
+    "expected_sources": [
+      "market_5932.txt"
+    ],
+    "expected_keywords": [
+      "十月份"
+    ],
+    "_note": {
+      "base_rank": 0,
+      "hyb_rank": 0
+    }
+  },
+  {
+    "question": "最近学校里感冒的人是不是特别多？",
+    "expected_sources": [
+      "market_2240.txt"
+    ],
+    "expected_keywords": [
+      "传染"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "宿舍厕所的门会不会把人反锁在里面？",
+    "expected_sources": [
+      "market_1180.txt"
+    ],
+    "expected_keywords": [
+      "把手"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 2
+    }
+  },
+  {
+    "question": "有人要送电脑出去，拿到的人需要答应什么？",
+    "expected_sources": [
+      "market_3545.txt"
+    ],
+    "expected_keywords": [
+      "君子协议"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 0
+    }
+  },
+  {
+    "question": "成飞那边最近有什么动静？",
+    "expected_sources": [
+      "market_1482.txt"
+    ],
+    "expected_keywords": [
+      "轰鸣"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "考试写不出来，是不是早点交卷更好？",
+    "expected_sources": [
+      "market_2675.txt"
+    ],
+    "expected_keywords": [
+      "复习"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "C 盘快满了，除了删文件还有什么办法把空间腾出来？",
+    "expected_sources": [
+      "market_2012.txt"
+    ],
+    "expected_keywords": [
+      "mklink"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "在珠海骑电动自行车上路，被查到会怎么处罚？",
+    "expected_sources": [
+      "market_2647.txt"
+    ],
+    "expected_keywords": [
+      "500"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "想投 C++ 方向的岗位，除了刷题还应该补哪方面的书？",
+    "expected_sources": [
+      "market_2993.txt"
+    ],
+    "expected_keywords": [
+      "对象模型"
+    ],
+    "_note": {
+      "base_rank": 2,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "参加数学建模比赛，队友应该怎么搭配？",
+    "expected_sources": [
+      "market_349.txt"
+    ],
+    "expected_keywords": [
+      "尖兵"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 3
+    }
+  },
+  {
+    "question": "想用平板看电子书、偶尔远程连电脑，有什么省钱的做法？",
+    "expected_sources": [
+      "market_4422.txt"
+    ],
+    "expected_keywords": [
+      "z-library"
+    ],
+    "_note": {
+      "base_rank": 2,
+      "hyb_rank": 2
+    }
+  },
+  {
+    "question": "学校的心理咨询一般要提前多久预约？",
+    "expected_sources": [
+      "market_5088.txt"
+    ],
+    "expected_keywords": [
+      "预约"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "在 Mac 上做开发，有哪些不方便的地方？",
+    "expected_sources": [
+      "market_5698.txt"
+    ],
+    "expected_keywords": [
+      "vs2026"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 2
+    }
+  },
+  {
+    "question": "靠打比赛刷综测，单项最多能加多少分？",
+    "expected_sources": [
+      "market_758.txt"
+    ],
+    "expected_keywords": [
+      "6分"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 1
+    }
+  },
+  {
+    "question": "中大之前跟谁打过辩论赛？",
+    "expected_sources": [
+      "market_1716.txt"
+    ],
+    "expected_keywords": [
+      "新国辩"
+    ],
+    "_note": {
+      "base_rank": 1,
+      "hyb_rank": 3
+    }
+  }
+]

@@ -213,7 +213,13 @@ class RAGService(object):
         """按渐进式披露策略动态检索文档，并返回调试信息。
 
         category 为空时跨所有数据源检索；指定时只在该分类内检索。
+
+        hybrid_search_enabled=True 时走「双路粗召回 -> 精排」的独立路径
+        （见 _retrieve_hybrid_with_debug）；=False 时走下面这套原有三阶段逻辑。
         """
+        if getattr(config, "hybrid_search_enabled", False):
+            return self._retrieve_hybrid_with_debug(query, category=category)
+
         stage_topk = list(getattr(config, "progressive_stage_topk", [1, 3, 5]))
         stage_thresholds = list(getattr(config, "progressive_stage_thresholds", [0.8, 0.65, 0.45]))
         min_docs = int(getattr(config, "progressive_min_docs", 1))
@@ -234,6 +240,11 @@ class RAGService(object):
                 "stages": [],
                 "filter": {},
                 "selected_sources": [doc.metadata.get("source", "") for doc in docs if doc.metadata],
+                "hybrid_used": False,
+                "rerank_used": False,
+                "coarse_count": len(docs),
+                "reranked_count": len(docs),
+                "score_source": "vector",
             }
 
         candidates: list[tuple[Document, float]] = []
@@ -298,6 +309,11 @@ class RAGService(object):
                 "stages": stage_debug,
                 "filter": filter_debug,
                 "selected_sources": selected_sources,
+                "hybrid_used": False,
+                "rerank_used": False,
+                "coarse_count": len(candidates),
+                "reranked_count": len(selected_docs),
+                "score_source": "vector",
             }
             return selected_docs, debug
 
@@ -326,8 +342,56 @@ class RAGService(object):
             "stages": stage_debug,
             "filter": filter_debug,
             "selected_sources": selected_sources,
+            "hybrid_used": False,
+            "rerank_used": False,
+            "coarse_count": len(fallback_candidates),
+            "reranked_count": len(selected_docs),
+            "score_source": "vector",
         }
         return selected_docs, debug
+
+    def _retrieve_hybrid_with_debug(self, query: str, category: str | None = None) -> tuple[list[Document], dict]:
+        """混合检索路径：BM25 + 向量双路粗召回 ->（可选）精排。
+
+        这条路径**不使用 progressive 的分数阈值**：EnsembleRetriever 融合后是 RRF
+        排名分，DashScope rerank 的分数量级又随模型差异极大（实测
+        qwen3.7-text-rerank 最高可到 0.9，gte-rerank-v2 只在 0.3 上下），
+        套 0.8/0.65/0.45 这种绝对阈值一定会全部落空。
+        """
+        coarse_k = max(int(config.bm25_top_k), int(config.vector_top_k))
+        coarse = self.vector_store_service.hybrid_search(query, k=coarse_k, category=category)
+
+        rerank_used = bool(getattr(config, "rerank_enabled", False))
+        final_n = int(config.rerank_top_n)
+        if rerank_used:
+            docs = self.vector_store_service.rerank(query, coarse, final_n)
+            score_source = "rerank"
+        else:
+            # 与重排模式保持同样的最终篇数，这样两种 hybrid 模式对比时
+            # 只差「有没有精排」这一个变量。
+            docs = coarse[:final_n]
+            score_source = "rrf"
+
+        selected_sources = []
+        for doc in docs:
+            source = doc.metadata.get("source", "") if doc.metadata else ""
+            if source and source not in selected_sources:
+                selected_sources.append(source)
+
+        debug = {
+            "mode": "hybrid",
+            "stages": [],
+            "filter": {},
+            "selected_sources": selected_sources,
+            "hybrid_used": True,
+            "rerank_used": rerank_used,
+            "coarse_count": len(coarse),
+            "reranked_count": len(docs),
+            "score_source": score_source,
+            "bm25_weight": float(config.bm25_weight),
+            "vector_weight": float(config.vector_weight),
+        }
+        return docs, debug
 
     def retrieve_docs_progressively(self, query: str, category: str | None = None) -> list[Document]:
         """按渐进式披露策略动态检索文档。"""
