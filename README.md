@@ -115,6 +115,42 @@ md5.text              # 每行 "content_md5<TAB>category"
 
 ## 安装依赖
 
+依赖由 [pyproject.toml](pyproject.toml) 声明、[uv.lock](uv.lock) 精确锁定（134 个包），
+推荐用 [uv](https://github.com/astral-sh/uv) 安装：
+
+```bash
+# 1. 安装 uv（二选一）
+pipx install uv
+# 或官方脚本：https://docs.astral.sh/uv/getting-started/installation/
+
+# 2. 按 uv.lock 复现环境（会自动创建 .venv）
+uv sync
+```
+
+如果 `pypi.org` 访问不稳定，先指定镜像源再安装（本项目实测该镜像可用）：
+
+```powershell
+# Windows PowerShell
+$env:UV_DEFAULT_INDEX="https://mirrors.aliyun.com/pypi/simple/"
+uv sync
+```
+```bash
+# macOS / Linux
+export UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
+uv sync
+```
+
+依赖包含：`streamlit`、`fastapi`、`uvicorn`、`httpx`、`pydantic`、`python-dotenv`、
+`dashscope`、`langchain-core` / `langchain-community` / `langchain-classic`（`EnsembleRetriever`
+在这里）/ `langchain-chroma` / `langchain-text-splitters`，以及混合检索用的 `rank-bm25`
+与中文分词用的 `jieba`。
+
+<details>
+<summary>旧方式（已弃用）：<code>pip install -r requirements.txt</code></summary>
+
+`requirements.txt` 仍然保留，但**已弃用**——它不再是安装入口，内容也不再随依赖更新维护，
+请使用上面的 `uv sync`。若确实要沿用 pip：
+
 ```bash
 python -m venv .venv
 # Windows
@@ -125,13 +161,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-依赖包含：`streamlit`、`fastapi`、`uvicorn`、`httpx`、`pydantic`、`python-dotenv`、
-`dashscope`、`langchain-core` / `langchain-community` / `langchain-classic`（`EnsembleRetriever`
-在这里）/ `langchain-chroma` / `langchain-text-splitters`，以及混合检索用的 `rank-bm25`
-与中文分词用的 `jieba`。
-
-> 若你的虚拟环境里没有 pip（`No module named pip`），可用 [uv](https://github.com/astral-sh/uv) 安装：
-> `uv pip install -r requirements.txt --python .venv\Scripts\python.exe`
+</details>
 
 ## 配置 .env
 

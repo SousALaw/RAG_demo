@@ -1,3 +1,4 @@
+# 已弃用，请使用 uv sync（见 pyproject.toml / uv.lock）
 # ===== Web 层 =====
 streamlit==1.56.0            # 前端两个 Streamlit 页面（app_qa.py / app_file_uploader.py）
 fastapi==0.141.1             # 后端 API 框架（api_server.py）

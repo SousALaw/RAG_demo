@@ -1,0 +1,26 @@
+[project]
+name = "rag-demo"
+version = "0.1.0"
+description = "中文 RAG 示例：双接口（REST API + Agent Tool）+ 多数据源 category 隔离"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit==1.56.0",
+    "fastapi==0.141.1",
+    "uvicorn==0.52.4",
+    "httpx==0.28.1",
+    "pydantic==2.13.5",
+    "langchain-core==1.6.2",
+    "langchain-community==0.4.1",
+    "langchain-classic==1.0.3",
+    "langchain-chroma==1.1.0",
+    "langchain-text-splitters==1.1.1",
+    "dashscope==1.25.16",
+    "rank-bm25==0.2.2",
+    "jieba==0.42.1",
+    "python-dotenv==1.2.3",
+]
+
+# 本项目是扁平脚本布局（没有可安装的包目录），
+# 告诉 uv 只管理依赖、不要尝试把项目本身当作包构建安装。
+[tool.uv]
+package = false
