@@ -46,7 +46,7 @@ vector_top_k = 30                  # 向量粗召回数量
 # 注意：BM25Retriever 默认分词是 text.split()，对中文会把整句当一个 token，必须替换。
 bm25_tokenizer = "jieba"
 
-rerank_enabled = False             # 是否启用重排序
+rerank_enabled = True             # 是否启用重排序
 # 默认 False 的依据：在 eval/eval_dataset.json（20 题）上实测，开启重排后
 # MRR@5 从 1.000 掉到 0.842、召回命中率从 100% 掉到 95%，没有一题变好。
 # 那套评估集对 baseline 已 100% 饱和、缺乏区分度，等 eval/eval_hard.json
@@ -64,6 +64,22 @@ rerank_dashscope_model = "qwen3-rerank"
 # 不限的话每次调用要 1 万多 token，而最终只需要 rerank_top_n 篇。
 # 调大 = 更全但更贵，调小 = 更省但可能漏掉排在后面的正确文档。
 rerank_max_candidates = 10
+
+# ===== 自适应精排（Rerank 门控）=====
+# 思路：粗召回后用「候选文档与 query 的平均余弦相似度」判断这道题难不难。
+#   avg_score >= 阈值 → 题目简单，跳过精排（省一次重排调用，也避免简单题上的负优化）
+#   avg_score <  阈值 → 题目吃力，才激活精排
+# 注意：必须用**真余弦**。本集合的 hnsw space 是 l2，
+#       similarity_search_with_relevance_scores 给的是 L2 派生 relevance，
+#       两者尺度完全不同（实测同题：余弦 0.68~0.74 vs L2 relevance 0.54~0.63）。
+rerank_adaptive_enabled = True       # 是否启用自适应激活（只在 rerank_enabled=True 时起作用）
+# 门控用哪个分数（都是真余弦，实测数据见 docs/eval.md）：
+#   top1 —— 最相关那篇的余弦。区分度最好：阈值 0.70 时简单题误激活 5%、困难题激活 49%、省 67% 重排
+#   mean —— 全部候选的平均余弦（原设计）。**实测与难易严重重叠**：阈值 0.70 时
+#           简单题误激活 95%，只省 2% 重排，等于没开
+#   top3 —— 前 3 篇平均，介于两者之间（0.69 时误激活 20%、省 53%）
+rerank_activation_signal = "top1"
+rerank_activation_threshold = 0.72   # 按 57 题分布实测选定，阈值敏感度表见 docs/design.md 第 6 节
 # 显式声明华北2（北京）地域：该 SDK 默认值本来就是北京站，这里是可审计的显式化。
 rerank_dashscope_base_url = "https://dashscope.aliyuncs.com/api/v1"
 rerank_top_n = 5                   # 精排后保留数量

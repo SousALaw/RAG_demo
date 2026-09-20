@@ -75,11 +75,19 @@ class VectorStoreService(object):
     def _bm25_key(category: str | None) -> str:
         return category or _BM25_ALL
 
-    def _load_corpus(self, category: str | None) -> tuple[list[str], list[dict]]:
-        """从 Chroma 取语料，保证 BM25 索引与向量库同源。"""
+    def _load_corpus(self, category: str | None) -> tuple[list[str], list[dict], list[str]]:
+        """从 Chroma 取语料（含 id），保证 BM25 索引与向量库同源。
+
+        带 id 是为了让 BM25 召回的文档也带 Document.id：
+        门控要按 id 取回向量算余弦，没有 id 就算不了（实测粗召回 30 篇里 8 篇无 id）。
+        """
         where = {"category": category} if category else None
         got = self.vector_store.get(where=where, include=["documents", "metadatas"])
-        return got.get("documents") or [], got.get("metadatas") or []
+        return (
+            got.get("documents") or [],
+            got.get("metadatas") or [],
+            got.get("ids") or [],
+        )
 
     def build_bm25_index(self, category: str | None = None):
         """构建（或复用）某个分类的 BM25 索引，懒加载。
@@ -99,7 +107,7 @@ class VectorStoreService(object):
             if cached is not None:
                 return cached
 
-            texts, metadatas = self._load_corpus(category)
+            texts, metadatas, ids = self._load_corpus(category)
             if not texts:
                 return None
 
@@ -108,6 +116,8 @@ class VectorStoreService(object):
             index = BM25Retriever.from_texts(
                 texts=texts,
                 metadatas=metadatas,
+                # 传 id：让 BM25 召回的文档也带 Document.id，门控才能按 id 取向量算余弦
+                ids=ids or None,
                 preprocess_func=_tokenize,
             )
             index.k = int(config.bm25_top_k)
@@ -152,6 +162,53 @@ class VectorStoreService(object):
         return self.vector_store.as_retriever(
             search_kwargs={"k": int(k), "filter": where}
         )
+
+    def cosine_similarities(self, query: str, docs: list[Document], category: str | None = None) -> list[float]:
+        """算候选文档与 query 的**余弦相似度列表**（降序），供精排门控使用。
+
+        为什么不用 similarity_search_with_relevance_scores：本集合的
+        `hnsw.space` 是 `l2`，那里返回的是 L2 派生 relevance，**不是余弦**，
+        两者尺度差很多（实测同一题：余弦 0.68~0.79，L2 relevance 0.54~0.63）。
+
+        这里按 `Document.id` 直接从本地 Chroma 取向量手算余弦，**零额外 API 成本**
+        （只有 query 需要一次 embedding；文档向量本来就在库里）。
+
+        没有 id 或取不到向量的文档会被跳过；一篇都取不到时返回空列表。
+        """
+        if not docs:
+            return []
+
+        ids = [getattr(d, "id", None) for d in docs]
+        ids = [i for i in ids if i]
+        if not ids:
+            return []
+
+        try:
+            import math
+
+            got = self.vector_store._collection.get(ids=ids, include=["embeddings"])
+            vectors = got.get("embeddings")
+            if vectors is None or len(vectors) == 0:
+                return []
+
+            query_vector = [float(x) for x in self.embedding.embed_query(query)]
+            query_norm = math.sqrt(sum(x * x for x in query_vector)) or 1e-12
+
+            out = []
+            for vector in vectors:
+                values = [float(x) for x in vector]
+                norm = math.sqrt(sum(x * x for x in values)) or 1e-12
+                out.append(sum(a * b for a, b in zip(values, query_vector)) / (norm * query_norm))
+            out.sort(reverse=True)
+            return out
+        except Exception:
+            # 门控只是优化，绝不该因它把检索弄挂：返回空列表，调用方会走保守分支
+            return []
+
+    def avg_cosine_similarity(self, query: str, docs: list[Document], category: str | None = None) -> float:
+        """候选文档与 query 的**平均**余弦相似度（保留给 mean 门控用）。"""
+        scores = self.cosine_similarities(query, docs, category=category)
+        return sum(scores) / len(scores) if scores else 0.0
 
     def hybrid_search(self, query: str, k: int, category: str | None = None) -> list[Document]:
         """BM25 + 向量双路粗召回，用 EnsembleRetriever（RRF）融合。

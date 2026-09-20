@@ -242,6 +242,9 @@ class RAGService(object):
                 "selected_sources": [doc.metadata.get("source", "") for doc in docs if doc.metadata],
                 "hybrid_used": False,
                 "rerank_used": False,
+                "avg_vector_score": 0.0,
+                "top1_vector_score": 0.0,
+                "rerank_activated": False,
                 "coarse_count": len(docs),
                 "reranked_count": len(docs),
                 "score_source": "vector",
@@ -311,6 +314,9 @@ class RAGService(object):
                 "selected_sources": selected_sources,
                 "hybrid_used": False,
                 "rerank_used": False,
+                "avg_vector_score": 0.0,
+                "top1_vector_score": 0.0,
+                "rerank_activated": False,
                 "coarse_count": len(candidates),
                 "reranked_count": len(selected_docs),
                 "score_source": "vector",
@@ -344,6 +350,9 @@ class RAGService(object):
             "selected_sources": selected_sources,
             "hybrid_used": False,
             "rerank_used": False,
+            "avg_vector_score": 0.0,
+            "top1_vector_score": 0.0,
+            "rerank_activated": False,
             "coarse_count": len(fallback_candidates),
             "reranked_count": len(selected_docs),
             "score_source": "vector",
@@ -357,17 +366,51 @@ class RAGService(object):
         排名分，DashScope rerank 的分数量级又随模型差异极大（实测
         qwen3.7-text-rerank 最高可到 0.9，gte-rerank-v2 只在 0.3 上下），
         套 0.8/0.65/0.45 这种绝对阈值一定会全部落空。
+
+        精排还会再过一道**自适应门控**（rerank_adaptive_enabled）：
+        用候选文档与 query 的**首篇余弦相似度（top1）**判断题目难不难，简单题直接跳过精排，
+        既省重排 token，也避免在简单题上被重排改坏排序。信号源可换 mean / top3
+        （rerank_activation_signal），但实测 mean 分不开简单题与困难题，
+        详见 docs/design.md 第 6 节。
         """
         coarse_k = max(int(config.bm25_top_k), int(config.vector_top_k))
         coarse = self.vector_store_service.hybrid_search(query, k=coarse_k, category=category)
 
         rerank_used = bool(getattr(config, "rerank_enabled", False))
+        adaptive = bool(getattr(config, "rerank_adaptive_enabled", False))
         final_n = int(config.rerank_top_n)
-        if rerank_used:
+
+        # 只在「确实要用门控做决策」时才算余弦，省掉一次没意义的 query embedding
+        avg_vector_score = 0.0
+        top1_vector_score = 0.0
+        rerank_activated = rerank_used
+        if rerank_used and adaptive:
+            scores = self.vector_store_service.cosine_similarities(query, coarse, category=category)
+            if scores:
+                avg_vector_score = sum(scores) / len(scores)
+                top1_vector_score = scores[0]
+            else:
+                # 取不到分数（没有 id 等）-> 按「困难」处理，保守触发精排
+                avg_vector_score = 0.0
+                top1_vector_score = 0.0
+
+            signal = str(getattr(config, "rerank_activation_signal", "top1")).lower()
+            if signal == "mean":
+                gate_score = avg_vector_score
+            elif signal == "top3":
+                gate_score = sum(scores[:3]) / min(3, len(scores)) if scores else 0.0
+            else:
+                gate_score = top1_vector_score
+
+            threshold = float(getattr(config, "rerank_activation_threshold", 0.7))
+            # 分数低 = 语料里没有很贴的答案 = 困难题 -> 激活精排
+            rerank_activated = gate_score < threshold
+
+        if rerank_activated:
             docs = self.vector_store_service.rerank(query, coarse, final_n)
             score_source = "rerank"
         else:
-            # 与重排模式保持同样的最终篇数，这样两种 hybrid 模式对比时
+            # 与重排模式保持同样的最终篇数，这样几种模式对比时
             # 只差「有没有精排」这一个变量。
             docs = coarse[:final_n]
             score_source = "rrf"
@@ -385,6 +428,10 @@ class RAGService(object):
             "selected_sources": selected_sources,
             "hybrid_used": True,
             "rerank_used": rerank_used,
+            # 门控相关：都是真余弦；未启用门控时为 0.0（表示「未计算」）
+            "avg_vector_score": round(float(avg_vector_score), 4),
+            "top1_vector_score": round(float(top1_vector_score), 4),
+            "rerank_activated": bool(rerank_activated),
             "coarse_count": len(coarse),
             "reranked_count": len(docs),
             "score_source": score_source,

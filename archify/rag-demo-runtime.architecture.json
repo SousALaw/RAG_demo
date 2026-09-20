@@ -52,8 +52,16 @@
       "id": "rag",
       "type": "backend",
       "label": "RAGService",
-      "sublabel": "rag.py · 经 vector_stores.py",
+      "sublabel": "rag.py · 粗召回 → 门控 → 精排",
       "pos": [1120, 360],
+      "size": [190, 70]
+    },
+    {
+      "id": "gate",
+      "type": "backend",
+      "label": "自适应门控",
+      "sublabel": "top1 余弦 < 0.72 才精排",
+      "pos": [1120, 205],
       "size": [190, 70]
     },
     {
@@ -100,7 +108,7 @@
       "id": "dashscope",
       "type": "external",
       "label": "DashScope 通义",
-      "sublabel": "qwen3-max · text-embedding-v4",
+      "sublabel": "qwen3-max · text-embedding-v4 · qwen3-rerank",
       "pos": [1120, 30],
       "size": [250, 70]
     }
@@ -109,7 +117,7 @@
     {
       "kind": "region",
       "label": "本机进程 · C:\\ai\\RAG_demo",
-      "wraps": ["ui", "client", "api", "core", "rag", "kb", "chroma", "files", "tools"],
+      "wraps": ["ui", "client", "api", "core", "rag", "gate", "kb", "chroma", "files", "tools"],
       "pad": 42
     },
     {
@@ -138,8 +146,10 @@
     { "id": "c_api_core", "from": "api", "to": "core", "label": "RAGApp 调用", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
     { "id": "c_core_rag", "from": "core", "to": "rag", "label": "问答域", "variant": "emphasis" },
     { "id": "c_rag_chroma", "from": "rag", "to": "chroma", "label": "向量检索", "variant": "emphasis" },
-    { "id": "c_rag_dash", "from": "rag", "to": "dashscope", "label": "qwen3-max", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
-    { "id": "c_chroma_dash", "from": "chroma", "to": "dashscope", "label": "text-embedding-v4", "variant": "emphasis" },
+    { "id": "c_rag_dash", "from": "rag", "to": "dashscope", "label": "qwen3-max 生成", "variant": "emphasis", "fromSide": "left", "toSide": "left", "labelDy": 72 },
+    { "id": "c_rag_gate", "from": "rag", "to": "gate", "label": "候选文档", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c_gate_dash", "from": "gate", "to": "dashscope", "label": "qwen3-rerank", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c_chroma_dash", "from": "chroma", "to": "dashscope", "label": "text-embedding-v4", "variant": "emphasis", "fromSide": "right", "toSide": "right" },
     { "id": "c_agent_tools", "from": "agent", "to": "tools", "label": "进程内", "variant": "emphasis" },
     { "id": "c_tools_core", "from": "tools", "to": "core", "label": "直调 RAGApp", "variant": "emphasis" },
     { "id": "c_core_kb", "from": "core", "to": "kb", "label": "知识库域", "variant": "dashed", "toSide": "left" },
@@ -163,6 +173,16 @@
         "5 个数据源共用一个 Chroma 集合，靠 metadata 的 category 过滤",
         "原文按 data/{category}/ 分目录，md5 去重按 (内容, 分类) 隔离",
         "加新数据源只改 config_data 里的一行；category 不是安全边界"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "自适应精排门控",
+      "items": [
+        "粗召回后先算首篇向量余弦（top1），低于 0.72 才判为困难题、才调精排",
+        "全量 57 题只触发 21 道，省约 63% 重排调用；简单题误触发 1/20",
+        "信号必须用 top1：mean 的困难题分数反而比简单题低，分不开档",
+        "集合是 l2 空间，similarity_search 给的不是余弦，门控用的是本地算的真余弦"
       ]
     },
     {

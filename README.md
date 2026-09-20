@@ -314,14 +314,21 @@ Agent 与小秋所在的进程需要能 import 本项目，并且能读到 `.env
 
 ### 检索相关配置
 
-两个检索开关在 [config_data.py](config_data.py)，默认 `hybrid_search_enabled = True`、
-`rerank_enabled = False`：
+检索开关都在 [config_data.py](config_data.py)：默认 `hybrid_search_enabled = True`、
+`rerank_enabled = True`、`rerank_adaptive_enabled = True`：
 
-- **重排序默认关闭。** 它在困难场景（用户提问与原文措辞差异大）上实测有效
-  （困难集 MRR 0.820 → 0.901、召回 89.2% → 97.3%），但在简单题上可能退步，
-  所以保守默认关。**困难场景建议开启** `rerank_enabled`。
-- 开启后注意**重排按输入 token 计费**，粗召回有 30 篇，`rerank_max_candidates`（默认 10）
+- **重排序默认开启，但靠门控兜底。** 它在困难场景（用户提问与原文措辞差异大）上实测有效
+  （困难集 MRR 0.820 → 0.901、召回 89.2% → 97.3%），但在简单题上会退步——所以**必须和门控一起用**。
+  只把 `rerank_adaptive_enabled` 关掉的话，就退回「每题都精排」，简单题上的负收益会回来。
+- 门控开启后注意**重排按输入 token 计费**，粗召回有 30 篇，`rerank_max_candidates`（默认 10）
   用来截断送进去的篇数。
+- **自适应门控**：`rerank_adaptive_enabled = True`（默认开）会在重排前先判难度——
+  粗召回的首篇向量余弦低于 `rerank_activation_threshold`（默认 0.72）才真的调重排，
+  全量 57 题上省约 **63%** 的重排调用，简单题误触发 1/20。
+  它**只在 `rerank_enabled = True` 时才有意义**；判据是纯本地计算的真余弦，
+  文档向量本地取，不额外花 API。`rerank_activation_signal` 默认 `"top1"`，
+  可切 `"mean"` / `"top3"`，但实测 `mean` 分不开简单题与困难题，不建议改。
+  阈值依据与取舍（门控会漏判一部分难题）见 [docs/design.md](docs/design.md) 第 6 节。
 
 依据与数据见 [docs/design.md](docs/design.md) 与 [docs/eval.md](docs/eval.md)。
 
